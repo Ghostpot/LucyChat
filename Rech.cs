@@ -254,6 +254,15 @@ namespace Rech
     public int? GamePhraseSec;
     public bool? LucyOn;
     public string LucyFacts;
+    public string TwitchClientId;
+    public string TwitchToken;
+    public string TwitchRefresh;
+    public string SongReward;
+    public string LucyReward;
+    public int SongSeconds;
+    public bool? SongYoutube;
+    public bool? SongRutube;
+    public bool? SongVk;
   }
 
   public class VoicePrefs
@@ -4039,6 +4048,18 @@ namespace Rech
     Label lucyState;
     Button lucyInstall;
     TextBox lucyFacts;
+    TextBox twitchClient;
+    TextBox songRewardBox;
+    TextBox lucyRewardBox;
+    TextBox songSecondsBox;
+    CheckBox songYtBox;
+    CheckBox songRuBox;
+    CheckBox songVkBox;
+    Label rewardState;
+    Label songNow;
+    TextBox playerBox;
+    string twitchToken = "";
+    string twitchRefresh = "";
     bool lucyBusy;
     DateTime lucyReadyAt;
     CheckBox authorBox;
@@ -4357,6 +4378,52 @@ namespace Rech
       lucyFacts.ScrollBars = ScrollBars.Vertical;
       lucyFacts.Text = LucyLocal.Card;
       Place(right, lucyFacts, 14, ref y, 110);
+      Place(right, MakeCaption("НАГРАДЫ"), 14, ref y, 28);
+      Place(right, MakeWrap("На Twitch создай две награды за баллы и включи «зритель вводит текст». Название должно совпасть с полями ниже. Песня не скачивается: в OBS играет официальный плеер. Чужую музыку поставь на дорожку, которая не пишется в запись эфира, иначе Twitch её заглушит."), 14, ref y, 92);
+      Place(right, MakeMute("Client ID с dev.twitch.tv"), 14, ref y, 18);
+      twitchClient = new TextBox();
+      StyleBox(twitchClient);
+      Place(right, twitchClient, 14, ref y, 28);
+      Button twitchLogin = MakeButton("Войти для наград", true);
+      twitchLogin.Click += delegate { Rewards.BeginLogin(twitchClient.Text); };
+      Place(right, twitchLogin, 14, ref y, 36);
+      rewardState = MakeWrap("Награды ждут вход через Twitch.");
+      Place(right, rewardState, 14, ref y, 48);
+      Place(right, MakeMute("Награда песни"), 14, ref y, 18);
+      songRewardBox = new TextBox();
+      StyleBox(songRewardBox);
+      songRewardBox.Text = "Заказать песню";
+      Place(right, songRewardBox, 14, ref y, 28);
+      Place(right, MakeMute("Награда вопроса Люси"), 14, ref y, 18);
+      lucyRewardBox = new TextBox();
+      StyleBox(lucyRewardBox);
+      lucyRewardBox.Text = "Поговорить с Люси";
+      Place(right, lucyRewardBox, 14, ref y, 28);
+      Place(right, MakeMute("Сколько секунд играет песня, от 20 до 180"), 14, ref y, 18);
+      songSecondsBox = new TextBox();
+      StyleBox(songSecondsBox);
+      songSecondsBox.Text = "75";
+      Place(right, songSecondsBox, 14, ref y, 28);
+      songYtBox = MakeCheck("YouTube");
+      songYtBox.Checked = true;
+      Place(right, songYtBox, 14, ref y, 28);
+      songRuBox = MakeCheck("Rutube");
+      songRuBox.Checked = true;
+      Place(right, songRuBox, 14, ref y, 28);
+      songVkBox = MakeCheck("VK Видео");
+      songVkBox.Checked = true;
+      Place(right, songVkBox, 14, ref y, 28);
+      songNow = MakeWrap("Сейчас тишина.");
+      Place(right, songNow, 14, ref y, 40);
+      Button skipSong = MakeButton("Пропустить песню", false);
+      skipSong.Click += delegate { Rewards.Skip(); };
+      Place(right, skipSong, 14, ref y, 36);
+      Place(right, MakeMute("Плеер для OBS, источник «Браузер», примерно 480×270"), 14, ref y, 18);
+      playerBox = new TextBox();
+      StyleBox(playerBox);
+      playerBox.ReadOnly = true;
+      playerBox.Font = new Font("Consolas", 9f);
+      Place(right, playerBox, 14, ref y, 28);
       sileroUrl = new TextBox();
       sileroOutputs = new TextBox();
       rateLabel = MakeMute("Скорость 100%");
@@ -4642,6 +4709,18 @@ namespace Rech
       LoadSettings();
       Wire();
       loading = false;
+      Rewards.Line += OnRewardLine;
+      Rewards.TokenReady += delegate(string access, string refresh)
+      {
+        if (IsDisposed) return;
+        BeginInvoke(new Action(delegate
+        {
+          twitchToken = access == null ? "" : access;
+          twitchRefresh = refresh == null ? "" : refresh;
+          SaveSettings();
+        }));
+      };
+      Rewards.Apply(RewardPrefsNow());
       ApplyVoice();
       ShowSileroReady();
       ShowLucyReady();
@@ -4653,6 +4732,7 @@ namespace Rech
       PushStyle();
       hub.Start();
       urlBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/" : "ссылка не открылась";
+      if (playerBox != null) playerBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/player" : "";
       ApplyListen();
       UpdatePlaceholder();
 
@@ -4677,7 +4757,11 @@ namespace Rech
 
       uiTimer = new System.Windows.Forms.Timer();
       uiTimer.Interval = 300;
-      uiTimer.Tick += delegate { RefreshState(); };
+      uiTimer.Tick += delegate
+      {
+        Rewards.Tick();
+        RefreshState();
+      };
       uiTimer.Start();
     }
 
@@ -4720,6 +4804,13 @@ namespace Rech
       };
       nickBox.TextChanged += save;
       if (lucyFacts != null) lucyFacts.TextChanged += save;
+      if (twitchClient != null) twitchClient.TextChanged += save;
+      if (songRewardBox != null) songRewardBox.TextChanged += save;
+      if (lucyRewardBox != null) lucyRewardBox.TextChanged += save;
+      if (songSecondsBox != null) songSecondsBox.TextChanged += save;
+      if (songYtBox != null) songYtBox.CheckedChanged += save;
+      if (songRuBox != null) songRuBox.CheckedChanged += save;
+      if (songVkBox != null) songVkBox.CheckedChanged += save;
       muteBox.TextChanged += delegate
       {
         if (loading) return;
@@ -4841,6 +4932,15 @@ namespace Rech
         bool oldCard = saved == null || saved.Trim().Length == 0 || saved.IndexOf("Она рысь", StringComparison.Ordinal) >= 0 || saved.IndexOf("КТО", StringComparison.Ordinal) < 0;
         lucyFacts.Text = oldCard ? LucyLocal.Card : saved;
       }
+      if (twitchClient != null) twitchClient.Text = settings.TwitchClientId == null ? "" : settings.TwitchClientId;
+      twitchToken = settings.TwitchToken == null ? "" : settings.TwitchToken;
+      twitchRefresh = settings.TwitchRefresh == null ? "" : settings.TwitchRefresh;
+      if (songRewardBox != null) songRewardBox.Text = settings.SongReward == null || settings.SongReward.Length == 0 ? "Заказать песню" : settings.SongReward;
+      if (lucyRewardBox != null) lucyRewardBox.Text = settings.LucyReward == null || settings.LucyReward.Length == 0 ? "Поговорить с Люси" : settings.LucyReward;
+      if (songSecondsBox != null) songSecondsBox.Text = settings.SongSeconds < 20 ? "75" : settings.SongSeconds.ToString(CultureInfo.InvariantCulture);
+      if (songYtBox != null) songYtBox.Checked = settings.SongYoutube ?? true;
+      if (songRuBox != null) songRuBox.Checked = settings.SongRutube ?? true;
+      if (songVkBox != null) songVkBox.Checked = settings.SongVk ?? true;
       if (swearBox != null) swearBox.Checked = settings.HideSwear ?? true;
       englishBox.Checked = settings.ReadEnglish ?? true;
       numberBox.Checked = settings.ReadNumbers ?? true;
@@ -6121,6 +6221,46 @@ namespace Rech
       if (stick) downButton.Visible = false;
     }
 
+    RewardPrefs RewardPrefsNow()
+    {
+      RewardPrefs prefs = new RewardPrefs();
+      prefs.ClientId = twitchClient == null ? "" : twitchClient.Text.Trim();
+      prefs.Token = twitchToken == null ? "" : twitchToken;
+      prefs.Refresh = twitchRefresh == null ? "" : twitchRefresh;
+      prefs.SongTitle = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
+      prefs.LucyTitle = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
+      int seconds = 75;
+      if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds);
+      if (seconds < 20) seconds = 20;
+      if (seconds > 180) seconds = 180;
+      prefs.Seconds = seconds;
+      prefs.Youtube = songYtBox == null || songYtBox.Checked;
+      prefs.Rutube = songRuBox == null || songRuBox.Checked;
+      prefs.Vk = songVkBox == null || songVkBox.Checked;
+      prefs.Facts = lucyFacts == null ? LucyLocal.Card : lucyFacts.Text;
+      return prefs;
+    }
+
+    void OnRewardLine(string author, string text, bool speak)
+    {
+      if (IsDisposed) return;
+      if (InvokeRequired)
+      {
+        BeginInvoke(new Action(delegate { OnRewardLine(author, text, speak); }));
+        return;
+      }
+      ChatMessage message = new ChatMessage();
+      message.Id = "reward:" + Guid.NewGuid().ToString("N");
+      message.SourceId = "reward";
+      message.Platform = "lucy";
+      message.Author = author == null || author.Length == 0 ? "Люси" : author;
+      message.Text = text == null ? "" : text;
+      message.Ts = Net.Now();
+      message.Fresh = false;
+      AddMessage(message);
+      if (speak) speaker.Say(message.Text, true);
+    }
+
     void RefreshState()
     {
       string text;
@@ -6134,6 +6274,8 @@ namespace Rech
       foreach (SourceConfig source in sources) if (source.Enabled) live = live + 1;
       if (live > 0) text = text + " · каналов " + live.ToString(CultureInfo.InvariantCulture);
       stateLabel.Text = text;
+      if (rewardState != null) rewardState.Text = Rewards.Status;
+      if (songNow != null) songNow.Text = Rewards.NowText();
       if (speaker.LastError != null && speaker.LastError.Length > 0) errorLabel.Text = speaker.LastError;
       else errorLabel.Text = "";
     }
@@ -6234,6 +6376,20 @@ namespace Rech
       settings.SkipEmotes = emoteBox.Checked;
       settings.LucyOn = lucyBox != null && lucyBox.Checked;
       settings.LucyFacts = lucyFacts == null ? LucyLocal.Card : lucyFacts.Text;
+      settings.TwitchClientId = twitchClient == null ? "" : twitchClient.Text.Trim();
+      settings.TwitchToken = twitchToken == null ? "" : twitchToken;
+      settings.TwitchRefresh = twitchRefresh == null ? "" : twitchRefresh;
+      settings.SongReward = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
+      settings.LucyReward = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
+      int songSeconds = 75;
+      if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out songSeconds);
+      if (songSeconds < 20) songSeconds = 20;
+      if (songSeconds > 180) songSeconds = 180;
+      settings.SongSeconds = songSeconds;
+      settings.SongYoutube = songYtBox == null || songYtBox.Checked;
+      settings.SongRutube = songRuBox == null || songRuBox.Checked;
+      settings.SongVk = songVkBox == null || songVkBox.Checked;
+      Rewards.Apply(RewardPrefsNow());
       settings.HideSwear = swearBox == null || swearBox.Checked;
       settings.ReadEnglish = englishBox.Checked;
       settings.ReadNumbers = numberBox.Checked;
@@ -7766,6 +7922,567 @@ namespace Rech
     static extern IntPtr SendMessageCue(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
   }
 
+  public class RewardPrefs
+  {
+    public string ClientId;
+    public string Token;
+    public string Refresh;
+    public string SongTitle;
+    public string LucyTitle;
+    public int Seconds;
+    public bool Youtube;
+    public bool Rutube;
+    public bool Vk;
+    public string Facts;
+  }
+
+  public class SongItem
+  {
+    public string Id;
+    public string Embed;
+    public string By;
+    public string Host;
+  }
+
+  public class Rewards
+  {
+    static readonly object gate = new object();
+    static RewardPrefs prefs = new RewardPrefs();
+    static List<SongItem> queue = new List<SongItem>();
+    static SongItem now;
+    static DateTime until;
+    static int generation;
+    static int started;
+    static HashSet<string> seen = new HashSet<string>();
+    static Dictionary<string, DateTime> cool = new Dictionary<string, DateTime>();
+    public static string Status = "Награды Twitch выключены.";
+    public static string UserCode = "";
+    public static event Action<string, string, bool> Line;
+    public static event Action<string, string> TokenReady;
+
+    public static void Apply(RewardPrefs next)
+    {
+      if (next == null) next = new RewardPrefs();
+      lock (gate)
+      {
+        bool restart = next.ClientId != prefs.ClientId || next.Token != prefs.Token;
+        prefs = next;
+        if (restart) generation = generation + 1;
+      }
+      Start();
+    }
+
+    public static void Start()
+    {
+      if (Interlocked.Exchange(ref started, 1) == 1) return;
+      Thread thread = new Thread(Loop);
+      thread.IsBackground = true;
+      thread.Name = "TwitchRewards";
+      thread.Start();
+    }
+
+    public static void BeginLogin(string clientId)
+    {
+      clientId = clientId == null ? "" : clientId.Trim();
+      if (clientId.Length < 10)
+      {
+        Status = "Нужен Client ID с dev.twitch.tv. Секрет приложения не нужен.";
+        return;
+      }
+      Thread thread = new Thread(delegate() { Login(clientId); });
+      thread.IsBackground = true;
+      thread.Name = "TwitchLogin";
+      thread.Start();
+    }
+
+    static void Login(string clientId)
+    {
+      try
+      {
+        Status = "Прошу код у Twitch…";
+        UserCode = "";
+        string body = "client_id=" + Uri.EscapeDataString(clientId) + "&scopes=" + Uri.EscapeDataString("channel:read:redemptions channel:manage:redemptions");
+        string json = PostForm("https://id.twitch.tv/oauth2/device", body);
+        JObject root = JObject.Parse(json);
+        string device = (string)root["device_code"];
+        string code = (string)root["user_code"];
+        int interval = root["interval"] == null ? 5 : (int)root["interval"];
+        if (interval < 2) interval = 5;
+        UserCode = code;
+        Status = "Код " + code + ". Открой twitch.tv/activate и подтверди награды.";
+        try
+        {
+          Process.Start(new ProcessStartInfo("https://www.twitch.tv/activate") { UseShellExecute = true });
+        }
+        catch
+        {
+        }
+        DateTime deadline = DateTime.UtcNow.AddMinutes(15);
+        while (DateTime.UtcNow < deadline)
+        {
+          Thread.Sleep(interval * 1000);
+          string ask = "client_id=" + Uri.EscapeDataString(clientId) + "&device_code=" + Uri.EscapeDataString(device) + "&grant_type=" + Uri.EscapeDataString("urn:ietf:params:oauth:grant-type:device_code");
+          string tokenJson;
+          try
+          {
+            tokenJson = PostForm("https://id.twitch.tv/oauth2/token", ask);
+          }
+          catch (Exception ex)
+          {
+            string note = ex.Message == null ? "" : ex.Message;
+            if (note.IndexOf("authorization_pending", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (note.IndexOf("slow_down", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              interval = interval + 2;
+              continue;
+            }
+            throw;
+          }
+          JObject token = JObject.Parse(tokenJson);
+          string access = (string)token["access_token"];
+          string refresh = (string)token["refresh_token"];
+          if (access == null || access.Length == 0) throw new Exception("Twitch не отдал ключ.");
+          lock (gate)
+          {
+            prefs.ClientId = clientId;
+            prefs.Token = access;
+            prefs.Refresh = refresh;
+            generation = generation + 1;
+          }
+          UserCode = "";
+          Status = "Twitch подтвердил. Слушаю награды.";
+          if (TokenReady != null) TokenReady(access, refresh);
+          return;
+        }
+        Status = "Код истёк. Нажми вход ещё раз.";
+      }
+      catch (Exception ex)
+      {
+        UserCode = "";
+        Status = "Вход не вышел: " + (ex.Message == null ? "ошибка Twitch" : ex.Message);
+      }
+    }
+
+    public static void Skip()
+    {
+      lock (gate)
+      {
+        now = null;
+        until = DateTime.UtcNow;
+        NextLocked();
+      }
+    }
+
+    public static void Tick()
+    {
+      lock (gate)
+      {
+        if (now != null && DateTime.UtcNow >= until)
+        {
+          now = null;
+          NextLocked();
+        }
+      }
+    }
+
+    public static string NowText()
+    {
+      lock (gate)
+      {
+        if (now == null)
+        {
+          if (queue.Count == 0) return "Сейчас тишина.";
+          return "В очереди " + queue.Count.ToString(CultureInfo.InvariantCulture) + ".";
+        }
+        int left = (int)(until - DateTime.UtcNow).TotalSeconds;
+        if (left < 0) left = 0;
+        return now.By + " · " + now.Host + " · ещё " + left.ToString(CultureInfo.InvariantCulture) + " с · в очереди " + queue.Count.ToString(CultureInfo.InvariantCulture);
+      }
+    }
+
+    public static string NowJson()
+    {
+      lock (gate)
+      {
+        StringBuilder sb = new StringBuilder();
+        sb.Append("{\"id\":").Append(JsonConvert.ToString(now == null ? "" : now.Id));
+        sb.Append(",\"embed\":").Append(JsonConvert.ToString(now == null ? "" : now.Embed));
+        sb.Append(",\"by\":").Append(JsonConvert.ToString(now == null ? "" : now.By));
+        sb.Append(",\"host\":").Append(JsonConvert.ToString(now == null ? "" : now.Host));
+        int left = 0;
+        if (now != null)
+        {
+          left = (int)(until - DateTime.UtcNow).TotalSeconds;
+          if (left < 0) left = 0;
+        }
+        sb.Append(",\"left\":").Append(left.ToString(CultureInfo.InvariantCulture));
+        sb.Append('}');
+        return sb.ToString();
+      }
+    }
+
+    static void NextLocked()
+    {
+      if (queue.Count == 0)
+      {
+        now = null;
+        return;
+      }
+      now = queue[0];
+      queue.RemoveAt(0);
+      int seconds = prefs.Seconds;
+      if (seconds < 20) seconds = 75;
+      if (seconds > 180) seconds = 180;
+      until = DateTime.UtcNow.AddSeconds(seconds);
+    }
+
+    static void Loop()
+    {
+      while (true)
+      {
+        RewardPrefs current;
+        int gen;
+        lock (gate)
+        {
+          current = prefs;
+          gen = generation;
+        }
+        if (current.ClientId == null || current.ClientId.Length < 10 || current.Token == null || current.Token.Length < 10)
+        {
+          if (UserCode == null || UserCode.Length == 0) Status = "Награды ждут вход через Twitch.";
+          Thread.Sleep(1500);
+          continue;
+        }
+        WsClient ws = null;
+        try
+        {
+          ws = new WsClient();
+          ws.Connect("wss://eventsub.wss.twitch.tv/ws", CancellationToken.None, null).GetAwaiter().GetResult();
+          string session = "";
+          bool subscribed = false;
+          while (true)
+          {
+            lock (gate)
+            {
+              if (generation != gen) throw new Exception("настройки сменились");
+            }
+            string raw = ws.Receive(CancellationToken.None).GetAwaiter().GetResult();
+            JObject root = JObject.Parse(raw);
+            string type = (string)root.SelectToken("metadata.message_type");
+            if (type == "session_keepalive") continue;
+            if (type == "session_reconnect") throw new Exception("Twitch перенёс соединение");
+            if (type == "revocation")
+            {
+              Status = "Twitch закрыл награды. Войди ещё раз.";
+              throw new Exception("revocation");
+            }
+            if (type == "session_welcome")
+            {
+              session = (string)root.SelectToken("payload.session.id");
+              if (!subscribed)
+              {
+                Subscribe(current, session);
+                subscribed = true;
+                Status = "Слушаю награды Twitch.";
+              }
+              continue;
+            }
+            if (type == "notification")
+            {
+              JToken ev = root.SelectToken("payload.event");
+              if (ev != null) Accept(current, ev);
+            }
+          }
+        }
+        catch (Exception ex)
+        {
+          string note = ex.Message == null ? "" : ex.Message;
+          if (note.IndexOf("401", StringComparison.Ordinal) >= 0)
+          {
+            if (!Refresh(current)) Status = "Ключ Twitch устарел. Войди ещё раз.";
+          }
+          else if (note != "настройки сменились" && note != "revocation")
+          {
+            Status = "Награды переподключаются.";
+          }
+          try { if (ws != null) ws.Abort(); } catch { }
+          Thread.Sleep(4000);
+        }
+      }
+    }
+
+    static void Subscribe(RewardPrefs current, string session)
+    {
+      string me = GetString("https://api.twitch.tv/helix/users", current);
+      JObject who = JObject.Parse(me);
+      string id = (string)who.SelectToken("data[0].id");
+      if (id == null || id.Length == 0) throw new Exception("Twitch не сказал, чей это канал.");
+      JObject body = new JObject();
+      body["type"] = "channel.channel_points_custom_reward_redemption.add";
+      body["version"] = "1";
+      body["condition"] = new JObject();
+      body["condition"]["broadcaster_user_id"] = id;
+      body["transport"] = new JObject();
+      body["transport"]["method"] = "websocket";
+      body["transport"]["session_id"] = session;
+      PostJson("https://api.twitch.tv/helix/eventsub/subscriptions", body.ToString(Formatting.None), current);
+    }
+
+    static bool Refresh(RewardPrefs current)
+    {
+      if (current.Refresh == null || current.Refresh.Length == 0 || current.ClientId == null) return false;
+      try
+      {
+        string ask = "client_id=" + Uri.EscapeDataString(current.ClientId) + "&refresh_token=" + Uri.EscapeDataString(current.Refresh) + "&grant_type=refresh_token";
+        string json = PostForm("https://id.twitch.tv/oauth2/token", ask);
+        JObject token = JObject.Parse(json);
+        string access = (string)token["access_token"];
+        string refresh = (string)token["refresh_token"];
+        if (access == null || access.Length == 0) return false;
+        lock (gate)
+        {
+          prefs.Token = access;
+          if (refresh != null && refresh.Length > 0) prefs.Refresh = refresh;
+          current.Token = access;
+          if (refresh != null && refresh.Length > 0) current.Refresh = refresh;
+          generation = generation + 1;
+        }
+        if (TokenReady != null) TokenReady(access, refresh == null || refresh.Length == 0 ? current.Refresh : refresh);
+        Status = "Ключ обновился. Слушаю награды.";
+        return true;
+      }
+      catch
+      {
+        return false;
+      }
+    }
+
+    static void Accept(RewardPrefs current, JToken ev)
+    {
+      string redemption = (string)ev["id"];
+      string user = (string)ev["user_name"];
+      string input = (string)ev["user_input"];
+      string title = (string)ev.SelectToken("reward.title");
+      string rewardId = (string)ev.SelectToken("reward.id");
+      string broadcaster = (string)ev["broadcaster_user_id"];
+      if (user == null || user.Length == 0) user = "зритель";
+      if (input == null) input = "";
+      input = input.Trim();
+      if (redemption != null)
+      {
+        lock (gate)
+        {
+          if (seen.Contains(redemption)) return;
+          seen.Add(redemption);
+          if (seen.Count > 80) seen.Clear();
+        }
+      }
+      string songTitle = current.SongTitle == null || current.SongTitle.Trim().Length == 0 ? "Заказать песню" : current.SongTitle.Trim();
+      string lucyTitle = current.LucyTitle == null || current.LucyTitle.Trim().Length == 0 ? "Поговорить с Люси" : current.LucyTitle.Trim();
+      if (SameTitle(title, songTitle))
+      {
+        string embed;
+        string host;
+        string why;
+        if (!SongLink(input, current, out embed, out host, out why))
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", user + ", " + why, false);
+          return;
+        }
+        if (Cool(user, "song"))
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", user + ", погоди немного перед следующей песней.", false);
+          return;
+        }
+        bool full;
+        lock (gate)
+        {
+          full = queue.Count >= 6;
+          if (!full)
+          {
+            SongItem item = new SongItem();
+            item.Id = redemption == null ? Guid.NewGuid().ToString("N") : redemption;
+            item.Embed = embed;
+            item.By = user;
+            item.Host = host;
+            queue.Add(item);
+            if (now == null) NextLocked();
+          }
+        }
+        if (full)
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", user + ", очередь полная. Подожди, пока доиграет.", false);
+          return;
+        }
+        Tell("Люси", user + ", песня в очереди.", false);
+        return;
+      }
+      if (SameTitle(title, lucyTitle))
+      {
+        if (input.Length == 0)
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", user + ", напиши вопрос в награде.", false);
+          return;
+        }
+        if (!LucyLocal.Ready)
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", "Меня ещё не скачали, спросить нечем.", false);
+          return;
+        }
+        if (Cool(user, "lucy"))
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", user + ", я ещё отвечаю. Спроси чуть позже.", false);
+          return;
+        }
+        string facts;
+        lock (gate) facts = prefs.Facts;
+        Thread talk = new Thread(delegate()
+        {
+          string answer = "";
+          try
+          {
+            answer = LucyLocal.Reply(user + ": " + input, facts);
+          }
+          catch
+          {
+          }
+          if (answer == null || answer.Length == 0) answer = "Не расслышала. Спроси ещё раз короче.";
+          Tell("Люси", answer, true);
+        });
+        talk.IsBackground = true;
+        talk.Name = "LucyReward";
+        talk.Start();
+      }
+    }
+
+    static bool Cool(string user, string kind)
+    {
+      string key = kind + ":" + (user == null ? "" : user.ToLowerInvariant());
+      lock (gate)
+      {
+        DateTime last;
+        if (cool.TryGetValue(key, out last) && (DateTime.UtcNow - last).TotalSeconds < 25) return true;
+        cool[key] = DateTime.UtcNow;
+        return false;
+      }
+    }
+
+    static bool SameTitle(string title, string want)
+    {
+      if (title == null || want == null) return false;
+      return string.Equals(title.Trim(), want.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool SongLink(string text, RewardPrefs current, out string embed, out string host, out string why)
+    {
+      embed = "";
+      host = "";
+      why = "нужна одна ссылка на песню с YouTube, Rutube или VK.";
+      if (text == null) return false;
+      Match yt = Regex.Match(text, "(?:youtube\\.com/(?:watch\\?v=|shorts/|embed/)|youtu\\.be/)([A-Za-z0-9_-]{6,16})", RegexOptions.IgnoreCase);
+      if (yt.Success)
+      {
+        if (current != null && !current.Youtube)
+        {
+          why = "YouTube в настройках выключен.";
+          return false;
+        }
+        embed = "https://www.youtube-nocookie.com/embed/" + yt.Groups[1].Value + "?autoplay=1&rel=0";
+        host = "YouTube";
+        return true;
+      }
+      Match ru = Regex.Match(text, "rutube\\.ru/(?:video|play/embed|shorts)/([a-f0-9]{16,40})", RegexOptions.IgnoreCase);
+      if (ru.Success)
+      {
+        if (current != null && !current.Rutube)
+        {
+          why = "Rutube в настройках выключен.";
+          return false;
+        }
+        embed = "https://rutube.ru/play/embed/" + ru.Groups[1].Value + "?autoplay=1";
+        host = "Rutube";
+        return true;
+      }
+      Match vk = Regex.Match(text, "(?:vk\\.com|vkvideo\\.ru)/video(-?\\d+)_(\\d+)", RegexOptions.IgnoreCase);
+      if (vk.Success)
+      {
+        if (current != null && !current.Vk)
+        {
+          why = "VK Видео в настройках выключен.";
+          return false;
+        }
+        embed = "https://vk.com/video_ext.php?oid=" + vk.Groups[1].Value + "&id=" + vk.Groups[2].Value + "&hd=2&autoplay=1";
+        host = "VK Видео";
+        return true;
+      }
+      return false;
+    }
+
+    static void Cancel(RewardPrefs current, string broadcaster, string rewardId, string redemption)
+    {
+      if (current == null || broadcaster == null || rewardId == null || redemption == null) return;
+      try
+      {
+        string url = "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions?broadcaster_id=" + Uri.EscapeDataString(broadcaster) + "&reward_id=" + Uri.EscapeDataString(rewardId) + "&id=" + Uri.EscapeDataString(redemption);
+        HttpRequestMessage req = new HttpRequestMessage(new HttpMethod("PATCH"), url);
+        req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + current.Token);
+        req.Headers.TryAddWithoutValidation("Client-Id", current.ClientId);
+        req.Content = new StringContent("{\"status\":\"CANCELED\"}", Encoding.UTF8, "application/json");
+        HttpResponseMessage res = Net.Http.Send(req);
+        res.Dispose();
+      }
+      catch
+      {
+      }
+    }
+
+    static void Tell(string author, string text, bool speak)
+    {
+      Action<string, string, bool> handler = Line;
+      if (handler != null) handler(author, text, speak);
+    }
+
+    static string PostForm(string url, string body)
+    {
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, url);
+      req.Content = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
+      return Send(req);
+    }
+
+    static string PostJson(string url, string body, RewardPrefs current)
+    {
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, url);
+      req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+      req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + current.Token);
+      req.Headers.TryAddWithoutValidation("Client-Id", current.ClientId);
+      return Send(req);
+    }
+
+    static string GetString(string url, RewardPrefs current)
+    {
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Get, url);
+      req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + current.Token);
+      req.Headers.TryAddWithoutValidation("Client-Id", current.ClientId);
+      return Send(req);
+    }
+
+    static string Send(HttpRequestMessage req)
+    {
+      HttpResponseMessage res = Net.Http.Send(req);
+      string text = res.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+      int code = (int)res.StatusCode;
+      res.Dispose();
+      if (code < 200 || code >= 300) throw new Exception(code.ToString(CultureInfo.InvariantCulture) + " " + (text == null ? "" : text));
+      return text == null ? "" : text;
+    }
+  }
+
   public class OverlayLine
   {
     public string Author;
@@ -7961,7 +8678,17 @@ namespace Rech
         if (query >= 0) path = path.Substring(0, query);
         byte[] body;
         string type;
-        if (path == "/feed")
+        if (path == "/player/now")
+        {
+          body = Encoding.UTF8.GetBytes(Rewards.NowJson());
+          type = "application/json; charset=utf-8";
+        }
+        else if (path == "/player")
+        {
+          body = Encoding.UTF8.GetBytes(PlayerPage());
+          type = "text/html; charset=utf-8";
+        }
+        else if (path == "/feed")
         {
           List<OverlayLine> copy = new List<OverlayLine>();
           OverlayStyle current;
@@ -7999,6 +8726,11 @@ namespace Rech
       {
         try { client.Close(); } catch { }
       }
+    }
+
+    static string PlayerPage()
+    {
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:#120c09;color:#f4efe6;font:16px Segoe UI,sans-serif}header{display:flex;justify-content:space-between;padding:8px 12px}b{color:#ff8a3d}iframe{width:100vw;height:calc(100vh - 36px);border:0;background:#000}.quiet{display:grid;place-items:center;height:calc(100vh - 36px);color:#a89880}</style></head><body><header><span>Люси ставит</span><b id=\"who\">тишина</b></header><div id=\"box\" class=\"quiet\">Ждём песню</div><script>var last='';async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();document.getElementById('who').textContent=j.by?j.by+' · '+j.host+' · '+j.left+' с':'тишина';if(j.id!==last){last=j.id||'';var box=document.getElementById('box');if(!j.embed){box.className='quiet';box.textContent='Ждём песню';}else{box.className='';box.innerHTML='<iframe allow=\"autoplay; encrypted-media\" src=\"'+j.embed.replace(/\"/g,'')+'\"></iframe>';}}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)

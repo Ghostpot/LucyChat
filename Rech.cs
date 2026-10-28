@@ -2480,7 +2480,7 @@ namespace Rech
     }
 
     public static string LastNote = "";
-    public const string Card = "КТО\r\nЯ Люси, мне двадцать пять. Я девушка и путешественница между вселенными: живу в чужом мире и иду дальше. Я не рысь и не книга.\r\nБОЛТОВНЯ\r\nЯ в пути между мирами. Дела нормальные, я на связи.\r\nКНИГА\r\nМоя книга называется «Свет на камнях». Это запись моего пути, а не я сама. 53 главы, пролог и три тома. Читать на ghostpot.ru.\r\nСТРИМ\r\nКогда эфир, смотри анонс на ghostpot.ru. Сама я день и час не назначаю.\r\nМУЗЫКА\r\nМои песни слушать на ghostpot.ru. Есть «Едва двадцать лет», «Колония купола» и «Алые ручейки».\r\nДОНАТ\r\nСеанс можно поддержать на boosty.to/ghostpot.";
+    public const string Card = "КТО\r\nЯ Люси, мне двадцать пять. Если спрашивают кто я, говорю коротко и не читаю список миров.\r\nБОЛТОВНЯ\r\nЯ на связи. Спроси про место или случай, отвечу по своим записям.\r\nКНИГА\r\nМоя книга называется «Свет на камнях». Это запись моего пути, а не я сама. 53 главы, пролог и три тома. Читать на ghostpot.ru.\r\nСТРИМ\r\nКогда эфир, смотри анонс на ghostpot.ru. Сама я день и час не назначаю.\r\nМУЗЫКА\r\nМои песни слушать на ghostpot.ru. Есть «Едва двадцать лет», «Колония купола» и «Алые ручейки».\r\nДОНАТ\r\nСеанс можно поддержать на boosty.to/ghostpot.";
 
     public static string Slice(string facts, string heard)
     {
@@ -2495,7 +2495,8 @@ namespace Rech
       else if (Has(q, "кто ты", "ты кто", "расскажи", "откуда ты", "про себя")) key = "КТО";
       string part = Section(card, key);
       if (part.Length == 0) part = Section(card, "БОЛТОВНЯ");
-      if (part.Length == 0) part = "Я в пути между мирами. Дела нормальные, я на связи.";
+      if (key == "КТО" && (part.Length == 0 || LucyLore.Slogan(part))) part = "Я Люси, мне двадцать пять. Спроси про место или случай, отвечу по записям.";
+      if (key != "КТО" && (part.Length == 0 || LucyLore.Slogan(part))) part = "Я на связи. Спроси про место или случай из записей.";
       return part;
     }
 
@@ -2541,9 +2542,14 @@ namespace Rech
       bool mess = low.Contains("рыс") || low.Contains("я книга") || low.Contains("просто книга") || low.Contains("книга из");
       if (lore)
       {
-        if (mess) return "Это не про меня.";
+        if (mess || LucyLore.Slogan(answer))
+        {
+          string told = LucyLocal.Keep(LucyLore.LastPassage, 2);
+          if (told.Length > 0) return told;
+        }
         return answer;
       }
+      if (LucyLore.Slogan(answer)) return OneSentence(section);
       int worlds = 0;
       if (low.Contains("азерот")) worlds++;
       if (low.Contains("готик")) worlds++;
@@ -2630,8 +2636,8 @@ namespace Rech
       string known = LucyLore.Pack(line, card);
       bool lore = LucyLore.LastHit;
       string rule = lore
-        ? "Ты Люси и говоришь от первого лица. Ты девушка, путешественница между вселенными. Ты не рысь и не книга. Ответь одной или двумя фразами по-русски и только по тексту ниже. Если этого места нет, скажи, что не помнишь, и не выдумывай.\n"
-        : "Ты Люси и говоришь от первого лица. Ты девушка, путешественница между вселенными. Ты не рысь и не книга. Ответь одной короткой фразой по-русски и не добавляй ничего сверх текста ниже.\n";
+        ? "Ты Люси и говоришь от первого лица. Ответь по-русски одной или двумя фразами строго по отрывку ниже. Оставайся в этом месте и не называй другие миры. Не представляйся. Не говори, что ты между мирами, что ты не рысь и не книга. Если в отрывке нет ответа, скажи только: не помню этого.\n"
+        : "Ты Люси и говоришь от первого лица. Ответь по-русски одной короткой фразой и только по тексту ниже. Не представляйся и не перечисляй миры, если об этом не спросили.\n";
       File.WriteAllText(systemPath, rule + known, new UTF8Encoding(false));
       File.WriteAllText(userPath, line, new UTF8Encoding(false));
       ProcessStartInfo info = new ProcessStartInfo();
@@ -2644,7 +2650,7 @@ namespace Rech
       info.RedirectStandardInput = true;
       info.StandardOutputEncoding = new UTF8Encoding(false);
       info.StandardErrorEncoding = new UTF8Encoding(false);
-      info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers 0 --threads 2 --ctx-size " + (lore ? "1536" : "1024") + " --n-predict " + (lore ? "72" : "28") + " --temp 0.6 --repeat-penalty 1.12";
+      info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers 0 --threads 2 --ctx-size " + (lore ? "1536" : "1024") + " --n-predict " + (lore ? "80" : "28") + " --temp " + (lore ? "0.35" : "0.6") + " --repeat-penalty 1.18";
       Process proc = new Process();
       proc.StartInfo = info;
       StringBuilder stdout = new StringBuilder();
@@ -2740,6 +2746,8 @@ namespace Rech
     static LoreFile data;
     static List<string> titles = new List<string>();
     static List<string> chunks = new List<string>();
+    static List<string> sticky = new List<string>();
+    public static string LastPassage = "";
     public static bool LastHit;
 
     static string Dir()
@@ -2908,30 +2916,76 @@ namespace Rech
     {
       Load();
       LastHit = false;
-      List<string> found = Search(heard, 3);
+      LastPassage = "";
+      bool meta = Meta(heard);
+      List<string> found = meta ? new List<string>() : Take(heard);
       string memory = Recent(heard);
+      if (Slogan(memory)) memory = "";
       StringBuilder sb = new StringBuilder();
-      if (card != null && card.Length > 0) sb.Append(card);
       if (found.Count > 0)
       {
         LastHit = true;
-        sb.Append("\nИз записей: ");
+        LastPassage = found[0];
+        sb.Append("Отрывок, это было со мной:\n");
         int i;
         for (i = 0; i < found.Count; i++)
         {
-          if (i > 0) sb.Append(' ');
+          if (i > 0) sb.Append("\n");
           sb.Append(found[i]);
         }
       }
+      else if (card != null && card.Length > 0 && !Slogan(card)) sb.Append(card);
       if (memory.Length > 0)
       {
-        LastHit = true;
-        sb.Append("\nНедавно говорили: ");
+        sb.Append("\nУже сказала: ");
         sb.Append(memory);
       }
       string all = sb.ToString().Trim();
-      if (all.Length > 1200) all = all.Substring(0, 1200);
+      if (all.Length > 1500) all = all.Substring(0, 1500);
       return all;
+    }
+
+    static bool Meta(string heard)
+    {
+      string q = heard == null ? "" : heard.ToLowerInvariant();
+      if (q.Contains("кто ты") || q.Contains("ты кто") || q.Contains("про себя")) return true;
+      if (q.Contains("песн") || q.Contains("музык") || q.Contains("трек")) return true;
+      if (q.Contains("стрим") || q.Contains("эфир") || q.Contains("анонс")) return true;
+      if (q.Contains("донат") || q.Contains("boosty") || q.Contains("бусти")) return true;
+      return false;
+    }
+
+    static bool Follow(string heard)
+    {
+      string q = heard == null ? "" : heard.ToLowerInvariant().Trim();
+      if (q.Length == 0 || sticky.Count == 0) return false;
+      if (q.Length <= 42) return true;
+      string[] keys = new string[] { "дальше", "потом", "почему", "зачем", "там", "это", "она", "он", "они", "её", "ее", "его", "ещё", "еще", "и что", "а что", "ну и" };
+      int i;
+      for (i = 0; i < keys.Length; i++)
+      {
+        if (q.IndexOf(keys[i], StringComparison.Ordinal) >= 0) return true;
+      }
+      return false;
+    }
+
+    static List<string> Take(string heard)
+    {
+      List<string> found = Search(heard, 2);
+      if (found.Count == 0 && Follow(heard)) return new List<string>(sticky);
+      if (found.Count > 0) sticky = new List<string>(found);
+      return found;
+    }
+
+    public static bool Slogan(string text)
+    {
+      if (text == null) return false;
+      string low = text.ToLowerInvariant();
+      if (low.Contains("между мир") || low.Contains("между вселен")) return true;
+      if (low.Contains("не рысь") || low.Contains("не книга")) return true;
+      if (low.Contains("в пути") && low.Contains("мир")) return true;
+      if (low.Contains("путешеств") && low.Contains("вселен")) return true;
+      return false;
     }
 
     static string Recent(string heard)
@@ -2994,15 +3048,21 @@ namespace Rech
           }
         }
         if (best < 0 || bestScore < 1) break;
-        bool rare = bestScore >= 2 || LongWord(heard);
-        if (!rare && found.Count > 0) break;
-        if (bestScore < 1) break;
-        if (found.Count == 0 && bestScore < 1) break;
-        if (found.Count == 0 && !LongWord(heard) && bestScore < 2) break;
+        if (found.Count == 0 && bestScore < 2 && !LongWord(heard) && !Solid(heard)) break;
+        if (found.Count > 0 && bestScore < 2 && !LongWord(heard)) break;
         found.Add(pool[best]);
         pool[best] = null;
       }
       return found;
+    }
+
+    static bool Solid(string heard)
+    {
+      foreach (Match match in Regex.Matches(heard == null ? "" : heard.ToLowerInvariant(), "[а-яёa-z0-9]{4,}"))
+      {
+        if (!Stop(match.Value)) return true;
+      }
+      return false;
     }
 
     static bool LongWord(string heard)

@@ -5126,7 +5126,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("В OBS только сам клип. Пока тишина, подложки нет. «Скрыть плеер» убирает картинку и глушит звук."), 14, ref y, 48);
+      Place(right, MakeMute("В OBS только ролик, без плашки и чёрного поля. У источника «Браузер» нажми «Обновить» и включи «Управлять звуком через OBS»."), 14, ref y, 58);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -9400,7 +9400,7 @@ namespace Rech
           why = "YouTube в настройках выключен.";
           return false;
         }
-        embed = "https://www.youtube-nocookie.com/embed/" + yt.Groups[1].Value + "?autoplay=1&rel=0";
+        embed = "https://www.youtube.com/embed/" + yt.Groups[1].Value + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
         host = "YouTube";
         return true;
       }
@@ -9754,7 +9754,7 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent;overflow:hidden}iframe{width:100vw;height:100vh;border:0;background:transparent}</style></head><body><div id=\"box\"></div><script>var last='';var hidden=false;async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();var box=document.getElementById('box');if(!j.embed){if(last!==''||hidden){box.innerHTML='';}last='';hidden=!!j.hide;return;}if(hidden||j.id!==last){hidden=false;last=j.id||'';box.innerHTML='<iframe allow=\"autoplay; encrypted-media\" src=\"'+j.embed.replace(/\"/g,'')+'\"></iframe>';}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent;overflow:hidden}#box{position:fixed;background:transparent}iframe{border:0;background:transparent;display:block}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>var last='';var api=false;var yt=null;function onYouTubeIframeAPIReady(){api=true;}function boxSize(){var w=window.innerWidth||960;var h=window.innerHeight||540;var vw=w;var vh=Math.round(w*9/16);if(vh>h){vh=h;vw=Math.round(h*16/9);}var box=document.getElementById('box');box.style.left=Math.round((w-vw)/2)+'px';box.style.top=Math.round((h-vh)/2)+'px';box.style.width=vw+'px';box.style.height=vh+'px';return {w:vw,h:vh};}function clearBox(){if(yt&&yt.destroy){try{yt.destroy();}catch(e){}}yt=null;var box=document.getElementById('box');if(box)box.innerHTML='';}function show(j){var s=boxSize();var id='';var m=(j.embed||'').match(/embed\\/([^?&#]+)/);if(m)id=m[1];if(j.host==='YouTube'&&id&&api&&window.YT&&YT.Player){clearBox();var hold=document.getElementById('box');hold.innerHTML='<div id=\"yt\"></div>';yt=new YT.Player('yt',{width:s.w,height:s.h,videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(100);e.target.playVideo();}catch(err){}}}});return;}clearBox();var f=document.createElement('iframe');f.width=s.w;f.height=s.h;f.style.width=s.w+'px';f.style.height=s.h+'px';f.allow='autoplay; encrypted-media; picture-in-picture';f.src=j.embed;document.getElementById('box').appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}else{boxSize();}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)

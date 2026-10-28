@@ -5115,6 +5115,12 @@ namespace Rech
       Place(right, songVkBox, 14, ref y, 28);
       songNow = MakeWrap("Сейчас тишина.");
       Place(right, songNow, 14, ref y, 40);
+      Button testSong = MakeButton("Проверить клип", true);
+      testSong.Click += delegate
+      {
+        if (!Rewards.Replay() && songNow != null) songNow.Text = "Сначала закажи одну ссылку. Эфир для проверки не нужен.";
+      };
+      Place(right, testSong, 14, ref y, 36);
       Button skipSong = MakeButton("Пропустить песню", false);
       skipSong.Click += delegate { Rewards.Skip(); };
       Place(right, skipSong, 14, ref y, 36);
@@ -8743,6 +8749,8 @@ namespace Rech
     static string broadId = "";
     static string lastLine = "";
     static DateTime lastAt;
+    static string lastEmbed = "";
+    static string lastHost = "";
     static bool concealed;
 
     public static void Apply(RewardPrefs next)
@@ -9064,6 +9072,26 @@ namespace Rech
       get { lock (gate) { return concealed; } }
     }
 
+    public static bool Replay()
+    {
+      lock (gate)
+      {
+        if (lastEmbed == null || lastEmbed.Length == 0) return false;
+        concealed = false;
+        SongItem item = new SongItem();
+        item.Id = Guid.NewGuid().ToString("N");
+        item.Embed = lastEmbed;
+        item.By = "проверка";
+        item.Host = lastHost == null || lastHost.Length == 0 ? "YouTube" : lastHost;
+        now = item;
+        int seconds = prefs.Seconds;
+        if (seconds < 20) seconds = 75;
+        if (seconds > 180) seconds = 180;
+        until = DateTime.UtcNow.AddSeconds(seconds);
+        return true;
+      }
+    }
+
     public static void Skip()
     {
       lock (gate)
@@ -9312,6 +9340,8 @@ namespace Rech
             item.Embed = embed;
             item.By = user;
             item.Host = host;
+            lastEmbed = embed;
+            lastHost = host;
             queue.Add(item);
             concealed = false;
             if (now == null) NextLocked();
@@ -9754,7 +9784,7 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent;overflow:hidden}#box{position:fixed;background:transparent}iframe{border:0;background:transparent;display:block}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>var last='';var api=false;var yt=null;function onYouTubeIframeAPIReady(){api=true;}function boxSize(){var w=window.innerWidth||960;var h=window.innerHeight||540;var vw=w;var vh=Math.round(w*9/16);if(vh>h){vh=h;vw=Math.round(h*16/9);}var box=document.getElementById('box');box.style.left=Math.round((w-vw)/2)+'px';box.style.top=Math.round((h-vh)/2)+'px';box.style.width=vw+'px';box.style.height=vh+'px';return {w:vw,h:vh};}function clearBox(){if(yt&&yt.destroy){try{yt.destroy();}catch(e){}}yt=null;var box=document.getElementById('box');if(box)box.innerHTML='';}function show(j){var s=boxSize();var id='';var m=(j.embed||'').match(/embed\\/([^?&#]+)/);if(m)id=m[1];if(j.host==='YouTube'&&id&&api&&window.YT&&YT.Player){clearBox();var hold=document.getElementById('box');hold.innerHTML='<div id=\"yt\"></div>';yt=new YT.Player('yt',{width:s.w,height:s.h,videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(100);e.target.playVideo();}catch(err){}}}});return;}clearBox();var f=document.createElement('iframe');f.width=s.w;f.height=s.h;f.style.width=s.w+'px';f.style.height=s.h+'px';f.allow='autoplay; encrypted-media; picture-in-picture';f.src=j.embed;document.getElementById('box').appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}else{boxSize();}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body,#box{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;background:transparent;display:block}</style></head><body><div id=\"box\"></div><script>var last='';function clearBox(){document.getElementById('box').innerHTML='';}function show(src){var box=document.getElementById('box');box.innerHTML='';var f=document.createElement('iframe');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture');f.setAttribute('allowfullscreen','');f.src=src;box.appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j.embed);}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)

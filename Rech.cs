@@ -2417,8 +2417,14 @@ namespace Rech
   public class LucyLocal
   {
     const string ZipUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b11951/llama-b11951-bin-win-cpu-x64.zip";
+    const string CudaZipUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b11951/llama-b11951-bin-win-cuda-12.4-x64.zip";
+    const string CudartZipUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b11951/cudart-llama-bin-win-cuda-12.4-x64.zip";
     const string ModelId = "qwen2.5-7b-q4";
     const string ModelUrl = "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf";
+    const int GpuLayers = 10;
+    static readonly object gpuGate = new object();
+    static bool gpuBusy;
+    static bool gpuFailed;
 
     public static string Home()
     {
@@ -2430,14 +2436,39 @@ namespace Rech
       return Path.Combine(Home(), "llama-completion.exe");
     }
 
-    static string ModelFile()
+    static string CudaDir()
     {
-      return Path.Combine(Home(), "lucy.gguf");
+      return Path.Combine(Home(), "cuda");
+    }
+
+    static string CudaExe()
+    {
+      return Path.Combine(CudaDir(), "llama-completion.exe");
+    }
+
+    public static bool GpuReady
+    {
+      get
+      {
+        try
+        {
+          return File.Exists(Path.Combine(CudaDir(), "ok")) && File.Exists(CudaExe()) && File.Exists(Path.Combine(CudaDir(), "cudart64_12.dll")) && File.Exists(Path.Combine(CudaDir(), "ggml-cuda.dll"));
+        }
+        catch
+        {
+          return false;
+        }
+      }
     }
 
     static string StampFile()
     {
       return Path.Combine(Home(), "model.id");
+    }
+
+    static string ModelFile()
+    {
+      return Path.Combine(Home(), "lucy.gguf");
     }
 
     public static bool Ready
@@ -2492,12 +2523,54 @@ namespace Rech
       if (!same)
       {
         try { if (File.Exists(ModelFile())) File.Delete(ModelFile()); } catch { }
-        if (status != null) status("Качаю модель поумнее, около 5 ГБ. Видеокарту не трогаю.");
+        if (status != null) status("Качаю модель поумнее, около 5 ГБ.");
         SileroLocal.Download(ModelUrl, ModelFile(), status, "Модель");
         File.WriteAllText(StampFile(), ModelId, new UTF8Encoding(false));
       }
       if (!Ready) throw new Exception("Модель Люси скачалась не до конца.");
-      if (status != null) status("Люси на месте.");
+      EnsureGpu(status);
+      if (status != null) status(GpuReady ? "Люси на месте. Немного считает видеокарта." : "Люси на месте. Видеокарта не подключилась, считает процессор.");
+    }
+
+    public static bool EnsureGpu(Action<string> status)
+    {
+      if (GpuReady) return true;
+      if (gpuFailed) return false;
+      lock (gpuGate)
+      {
+        if (gpuBusy) return false;
+        gpuBusy = true;
+      }
+      try
+      {
+        if (GpuReady) return;
+        string dir = CudaDir();
+        Directory.CreateDirectory(dir);
+        string drive = Path.GetPathRoot(dir);
+        if (drive != null && drive.Length > 0)
+        {
+          DriveInfo info = new DriveInfo(drive);
+          if (info.IsReady && info.AvailableFreeSpace < 2500L * 1024L * 1024L) throw new Exception("Для куска видеокарты нужно около 2.5 ГБ на диске.");
+        }
+        string engineZip = Path.Combine(dir, "cuda.zip");
+        string runtimeZip = Path.Combine(dir, "cudart.zip");
+        if (status != null) status("Качаю кусок видеокарты…");
+        SileroLocal.Download(CudaZipUrl, engineZip, status, "Видеокарта");
+        if (status != null) status("Качаю библиотеки видеокарты…");
+        SileroLocal.Download(CudartZipUrl, runtimeZip, status, "Библиотеки");
+        if (status != null) status("Распаковываю видеокарту…");
+        ZipFile.ExtractToDirectory(engineZip, dir, true);
+        ZipFile.ExtractToDirectory(runtimeZip, dir, true);
+        try { File.Delete(engineZip); } catch { }
+        try { File.Delete(runtimeZip); } catch { }
+        if (!File.Exists(CudaExe())) throw new Exception("Движок видеокарты не распаковался.");
+        File.WriteAllText(Path.Combine(dir, "ok"), GpuLayers.ToString(CultureInfo.InvariantCulture), new UTF8Encoding(false));
+        return true;
+      }
+      finally
+      {
+        lock (gpuGate) gpuBusy = false;
+      }
     }
 
     public static string LastNote = "";
@@ -2661,67 +2734,105 @@ namespace Rech
         : "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Ответь по тексту ниже и можешь чуть додумать, но не выдумывай факты. Не представляйся и не перечисляй миры.\n";
       File.WriteAllText(systemPath, rule + known, new UTF8Encoding(false));
       File.WriteAllText(userPath, line, new UTF8Encoding(false));
-      ProcessStartInfo info = new ProcessStartInfo();
-      info.FileName = Exe();
-      info.WorkingDirectory = home;
-      info.UseShellExecute = false;
-      info.CreateNoWindow = true;
-      info.RedirectStandardOutput = true;
-      info.RedirectStandardError = true;
-      info.RedirectStandardInput = true;
-      info.StandardOutputEncoding = new UTF8Encoding(false);
-      info.StandardErrorEncoding = new UTF8Encoding(false);
-      int threads = Environment.ProcessorCount / 2;
-      if (threads < 2) threads = 2;
-      if (threads > 4) threads = 4;
-      info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers 0 --threads " + threads.ToString(CultureInfo.InvariantCulture) + " --ctx-size " + (lore ? "2048" : "1024") + " --n-predict " + (lore ? "96" : "40") + " --temp " + (lore ? "0.55" : "0.7") + " --repeat-penalty 1.15";
-      Process proc = new Process();
-      proc.StartInfo = info;
-      StringBuilder stdout = new StringBuilder();
-      StringBuilder stderr = new StringBuilder();
-      try
+      bool wantGpu = GpuReady && !gpuFailed;
+      string answer = "";
+      int pass;
+      for (pass = 0; pass < 2; pass++)
       {
-        if (!proc.Start())
+        if (pass == 1 && wantGpu) break;
+        bool gpu = wantGpu && pass == 0;
+        ProcessStartInfo info = new ProcessStartInfo();
+        info.FileName = gpu ? CudaExe() : Exe();
+        info.WorkingDirectory = gpu ? CudaDir() : home;
+        info.UseShellExecute = false;
+        info.CreateNoWindow = true;
+        info.RedirectStandardOutput = true;
+        info.RedirectStandardError = true;
+        info.RedirectStandardInput = true;
+        info.StandardOutputEncoding = new UTF8Encoding(false);
+        info.StandardErrorEncoding = new UTF8Encoding(false);
+        int threads = gpu ? 2 : Environment.ProcessorCount / 2;
+        if (threads < 2) threads = 2;
+        if (threads > 4) threads = 4;
+        info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers " + (gpu ? GpuLayers.ToString(CultureInfo.InvariantCulture) : "0") + " --threads " + threads.ToString(CultureInfo.InvariantCulture) + " --ctx-size " + (lore ? "2048" : "1024") + " --n-predict " + (lore ? "96" : "40") + " --temp " + (lore ? "0.55" : "0.7") + " --repeat-penalty 1.15";
+        Process proc = new Process();
+        proc.StartInfo = info;
+        StringBuilder stdout = new StringBuilder();
+        StringBuilder stderr = new StringBuilder();
+        try
         {
-          LastNote = "Люси не запустилась.";
+          if (!proc.Start())
+          {
+            if (gpu)
+            {
+              gpuFailed = true;
+              wantGpu = false;
+              continue;
+            }
+            LastNote = "Люси не запустилась.";
+            return "";
+          }
+          try { proc.StandardInput.Close(); } catch { }
+        }
+        catch (Exception ex)
+        {
+          if (gpu)
+          {
+            gpuFailed = true;
+            wantGpu = false;
+            continue;
+          }
+          LastNote = ex.Message;
           return "";
         }
-        try { proc.StandardInput.Close(); } catch { }
+        try { proc.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+        proc.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
+        {
+          if (e.Data != null) stdout.AppendLine(e.Data);
+        };
+        proc.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+        {
+          if (e.Data != null) stderr.AppendLine(e.Data);
+        };
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
+        if (!proc.WaitForExit(90000))
+        {
+          try { proc.Kill(true); } catch { try { proc.Kill(); } catch { } }
+          if (gpu)
+          {
+            gpuFailed = true;
+            wantGpu = false;
+            continue;
+          }
+          LastNote = "Слишком долго думала, остановила. Позови ещё раз.";
+          return "";
+        }
+        try { proc.WaitForExit(2000); } catch { }
+        answer = lore ? Keep(Clean(stdout.ToString()), 2) : OneSentence(Clean(stdout.ToString()));
+        if (answer.Length == 0) answer = lore ? Keep(Clean(stderr.ToString()), 2) : OneSentence(Clean(stderr.ToString()));
+        answer = Guard(answer, card, lore);
+        if (answer.Length == 0 && gpu)
+        {
+          string err = stderr.ToString().ToLowerInvariant();
+          if (proc.ExitCode != 0 || err.Contains("cuda") || err.Contains("cublas") || err.Contains("out of memory"))
+          {
+            gpuFailed = true;
+            wantGpu = false;
+            continue;
+          }
+        }
+        if (answer.Length == 0)
+        {
+          string note = (stderr.ToString() + " " + stdout.ToString()).Trim();
+          note = Regex.Replace(note, "\\s+", " ").Trim();
+          if (note.Length > 110) note = note.Substring(0, 110);
+          LastNote = note.Length == 0 ? "Пустой ответ. Позови ещё раз." : note;
+          return "";
+        }
+        return answer;
       }
-      catch (Exception ex)
-      {
-        LastNote = ex.Message;
-        return "";
-      }
-      try { proc.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
-      proc.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
-      {
-        if (e.Data != null) stdout.AppendLine(e.Data);
-      };
-      proc.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
-      {
-        if (e.Data != null) stderr.AppendLine(e.Data);
-      };
-      proc.BeginOutputReadLine();
-      proc.BeginErrorReadLine();
-      if (!proc.WaitForExit(90000))
-      {
-        try { proc.Kill(true); } catch { try { proc.Kill(); } catch { } }
-        LastNote = "Слишком долго думала, остановила. Позови ещё раз.";
-        return "";
-      }
-      try { proc.WaitForExit(2000); } catch { }
-      string answer = lore ? Keep(Clean(stdout.ToString()), 2) : OneSentence(Clean(stdout.ToString()));
-      if (answer.Length == 0) answer = lore ? Keep(Clean(stderr.ToString()), 2) : OneSentence(Clean(stderr.ToString()));
-      answer = Guard(answer, card, lore);
-      if (answer.Length == 0)
-      {
-        string note = (stderr.ToString() + " " + stdout.ToString()).Trim();
-        note = Regex.Replace(note, "\\s+", " ").Trim();
-        if (note.Length > 110) note = note.Substring(0, 110);
-        LastNote = note.Length == 0 ? "Пустой ответ. Позови ещё раз." : note;
-        return "";
-      }
+      LastNote = "Видеокарта не взяла счёт, и процессор тоже промолчал.";
       return answer;
     }
 
@@ -6515,14 +6626,59 @@ namespace Rech
       if (lucyState == null || lucyInstall == null) return;
       if (!LucyLocal.Ready)
       {
-        lucyState.Text = "Нужна модель поумнее, около 5 ГБ, один раз. Считает процессором, видеокарту не занимает.";
+        lucyState.Text = "Нужна модель поумнее, около 5 ГБ, один раз. Потом чуть-чуть видеокарты, игру не забираю.";
         lucyInstall.Text = "Скачать Люси";
         lucyInstall.Enabled = true;
         return;
       }
-      lucyState.Text = "Люси на месте. Отвечает, когда её зовут, и сразу замолкает.";
       lucyInstall.Text = "Люси скачана";
       lucyInstall.Enabled = false;
+      if (LucyLocal.GpuReady)
+      {
+        lucyState.Text = "Люси на месте. Немного считает видеокарта, остальное процессор.";
+        return;
+      }
+      lucyState.Text = "Люси на месте. Один раз докачаю кусок для видеокарты.";
+      Thread gpu = new Thread(new ThreadStart(delegate
+      {
+        try
+        {
+          bool got = LucyLocal.EnsureGpu(delegate(string msg)
+          {
+            try
+            {
+              BeginInvoke(new Action(delegate
+              {
+                if (lucyState != null && msg != null && msg.Length > 0) lucyState.Text = msg;
+              }));
+            }
+            catch
+            {
+            }
+          });
+          if (!got && !LucyLocal.GpuReady) return;
+          BeginInvoke(new Action(delegate
+          {
+            if (lucyState != null) lucyState.Text = LucyLocal.GpuReady ? "Люси на месте. Немного считает видеокарта, остальное процессор." : "Люси на месте. Видеокарта не подключилась, считает процессор.";
+          }));
+        }
+        catch (Exception ex)
+        {
+          try
+          {
+            BeginInvoke(new Action(delegate
+            {
+              if (lucyState != null) lucyState.Text = ex.Message;
+            }));
+          }
+          catch
+          {
+          }
+        }
+      }));
+      gpu.IsBackground = true;
+      gpu.Name = "RechLucyGpu";
+      gpu.Start();
     }
 
     void RebuildVisible()

@@ -2527,9 +2527,19 @@ namespace Rech
 
     public static string Guard(string answer, string section)
     {
+      return Guard(answer, section, false);
+    }
+
+    public static string Guard(string answer, string section, bool lore)
+    {
       if (answer == null) return "";
       string low = answer.ToLowerInvariant();
       bool mess = low.Contains("рыс") || low.Contains("я книга") || low.Contains("просто книга") || low.Contains("книга из");
+      if (lore)
+      {
+        if (mess) return "Это не про меня.";
+        return answer;
+      }
       int worlds = 0;
       if (low.Contains("азерот")) worlds++;
       if (low.Contains("готик")) worlds++;
@@ -2570,6 +2580,39 @@ namespace Rech
       return text;
     }
 
+    public static string Keep(string text, int sentences)
+    {
+      if (text == null) return "";
+      text = text.Trim();
+      if (sentences < 1) sentences = 1;
+      int found = 0;
+      int i;
+      for (i = 0; i < text.Length; i++)
+      {
+        char c = text[i];
+        if (c != '.' && c != '!' && c != '?') continue;
+        if (c == '.' && i > 0 && i + 1 < text.Length)
+        {
+          char before = text[i - 1];
+          char after = text[i + 1];
+          if (((before >= 'a' && before <= 'z') || (before >= 'A' && before <= 'Z') || (before >= 'а' && before <= 'я') || (before >= 'А' && before <= 'Я'))
+            && ((after >= 'a' && after <= 'z') || (after >= 'A' && after <= 'Z') || (after >= 'а' && after <= 'я') || (after >= 'А' && after <= 'Я')))
+          {
+            continue;
+          }
+        }
+        if (i >= 8) found++;
+        if (found >= sentences) return text.Substring(0, i + 1).Trim();
+      }
+      if (text.Length > 320)
+      {
+        int cut = text.LastIndexOf(' ', 320);
+        if (cut < 80) cut = 320;
+        text = text.Substring(0, cut).Trim();
+      }
+      return text;
+    }
+
     public static string Reply(string heard, string facts)
     {
       LastNote = "";
@@ -2579,8 +2622,13 @@ namespace Rech
       string userPath = Path.Combine(home, "user.txt");
       string line = heard == null ? "" : heard.Replace("\r", " ").Replace("\n", " ").Trim();
       if (line.Length > 180) line = line.Substring(0, 180);
-      string known = Slice(facts, line);
-      File.WriteAllText(systemPath, "Ты Люси и говоришь от первого лица. Ты девушка, путешественница между вселенными. Ты не рысь и не книга. Ответь одной короткой фразой по-русски и не добавляй ничего сверх текста ниже.\n" + known, new UTF8Encoding(false));
+      string card = Slice(facts, line);
+      string known = LucyLore.Pack(line, card);
+      bool lore = LucyLore.LastHit;
+      string rule = lore
+        ? "Ты Люси и говоришь от первого лица. Ты девушка, путешественница между вселенными. Ты не рысь и не книга. Ответь одной или двумя фразами по-русски и только по тексту ниже. Если этого места нет, скажи, что не помнишь, и не выдумывай.\n"
+        : "Ты Люси и говоришь от первого лица. Ты девушка, путешественница между вселенными. Ты не рысь и не книга. Ответь одной короткой фразой по-русски и не добавляй ничего сверх текста ниже.\n";
+      File.WriteAllText(systemPath, rule + known, new UTF8Encoding(false));
       File.WriteAllText(userPath, line, new UTF8Encoding(false));
       ProcessStartInfo info = new ProcessStartInfo();
       info.FileName = Exe();
@@ -2592,7 +2640,7 @@ namespace Rech
       info.RedirectStandardInput = true;
       info.StandardOutputEncoding = new UTF8Encoding(false);
       info.StandardErrorEncoding = new UTF8Encoding(false);
-      info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers 0 --threads 2 --ctx-size 1024 --n-predict 28 --temp 0.6 --repeat-penalty 1.12";
+      info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers 0 --threads 2 --ctx-size " + (lore ? "1536" : "1024") + " --n-predict " + (lore ? "72" : "28") + " --temp 0.6 --repeat-penalty 1.12";
       Process proc = new Process();
       proc.StartInfo = info;
       StringBuilder stdout = new StringBuilder();
@@ -2629,9 +2677,9 @@ namespace Rech
         return "";
       }
       try { proc.WaitForExit(2000); } catch { }
-      string answer = OneSentence(Clean(stdout.ToString()));
-      if (answer.Length == 0) answer = OneSentence(Clean(stderr.ToString()));
-      answer = Guard(answer, known);
+      string answer = lore ? Keep(Clean(stdout.ToString()), 2) : OneSentence(Clean(stdout.ToString()));
+      if (answer.Length == 0) answer = lore ? Keep(Clean(stderr.ToString()), 2) : OneSentence(Clean(stderr.ToString()));
+      answer = Guard(answer, card, lore);
       if (answer.Length == 0)
       {
         string note = (stderr.ToString() + " " + stdout.ToString()).Trim();
@@ -2664,8 +2712,636 @@ namespace Rech
         sb.Append(line).Append(' ');
       }
       text = Regex.Replace(sb.ToString(), "\\s+", " ").Trim().Trim('"', '«', '»', '>');
-      if (text.Length > 180) text = text.Substring(0, 180).Trim();
+      if (text.Length > 340) text = text.Substring(0, 340).Trim();
       return text;
+    }
+  }
+
+  public class LorePiece
+  {
+    public string Title;
+    public string Body;
+  }
+
+  public class LoreFile
+  {
+    public bool Memory = true;
+    public List<LorePiece> Pieces = new List<LorePiece>();
+    public List<string> Talk = new List<string>();
+  }
+
+  public class LucyLore
+  {
+    static readonly object gate = new object();
+    static LoreFile data;
+    static List<string> titles = new List<string>();
+    static List<string> chunks = new List<string>();
+    public static bool LastHit;
+
+    static string Dir()
+    {
+      return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech", "lore");
+    }
+
+    static string IndexPath()
+    {
+      return Path.Combine(Dir(), "index.json");
+    }
+
+    public static void Load()
+    {
+      lock (gate)
+      {
+        if (data != null) return;
+        data = new LoreFile();
+        try
+        {
+          if (File.Exists(IndexPath()))
+          {
+            LoreFile read = JsonConvert.DeserializeObject<LoreFile>(File.ReadAllText(IndexPath(), Encoding.UTF8));
+            if (read != null) data = read;
+          }
+        }
+        catch
+        {
+          data = new LoreFile();
+        }
+        if (data.Pieces == null) data.Pieces = new List<LorePiece>();
+        if (data.Talk == null) data.Talk = new List<string>();
+        Rebuild();
+      }
+    }
+
+    static void Rebuild()
+    {
+      titles = new List<string>();
+      chunks = new List<string>();
+      int i;
+      for (i = 0; i < data.Pieces.Count; i++)
+      {
+        LorePiece piece = data.Pieces[i];
+        if (piece == null || piece.Body == null) continue;
+        string title = piece.Title == null || piece.Title.Trim().Length == 0 ? "Заметка" : piece.Title.Trim();
+        List<string> parts = Split(piece.Body);
+        int k;
+        int count = 0;
+        for (k = 0; k < parts.Count; k++)
+        {
+          chunks.Add(parts[k]);
+          count++;
+        }
+        titles.Add(title + "  ·  " + count.ToString(CultureInfo.InvariantCulture) + " кусков");
+      }
+    }
+
+    public static void Save()
+    {
+      lock (gate)
+      {
+        Directory.CreateDirectory(Dir());
+        File.WriteAllText(IndexPath(), JsonConvert.SerializeObject(data), new UTF8Encoding(false));
+      }
+    }
+
+    public static List<string> Titles()
+    {
+      Load();
+      lock (gate)
+      {
+        return new List<string>(titles);
+      }
+    }
+
+    public static int Chunks()
+    {
+      Load();
+      lock (gate) { return chunks.Count; }
+    }
+
+    public static bool Memory
+    {
+      get
+      {
+        Load();
+        lock (gate) { return data.Memory; }
+      }
+      set
+      {
+        Load();
+        lock (gate) { data.Memory = value; }
+        Save();
+      }
+    }
+
+    public static string AddText(string title, string body)
+    {
+      body = CleanText(body);
+      if (body.Length < 40) return "Мало текста. Нужен абзац, а не пара слов.";
+      if (body.Length > 1500000) body = body.Substring(0, 1500000);
+      Load();
+      lock (gate)
+      {
+        LorePiece piece = new LorePiece();
+        piece.Title = title == null || title.Trim().Length == 0 ? "Заметка" : title.Trim();
+        piece.Body = body;
+        data.Pieces.Add(piece);
+        Rebuild();
+      }
+      Save();
+      return "";
+    }
+
+    public static string AddFile(string path)
+    {
+      string ext = Path.GetExtension(path).ToLowerInvariant();
+      string text;
+      if (ext == ".docx") text = ReadDocx(path);
+      else if (ext == ".doc") text = ReadDoc(path);
+      else text = File.ReadAllText(path, Encoding.UTF8);
+      string note = AddText(Path.GetFileNameWithoutExtension(path), text);
+      if (note.Length > 0 && ext == ".doc") return "Старый doc почти пустой. Сохрани его как docx или txt.";
+      return note;
+    }
+
+    public static void RemoveAt(int index)
+    {
+      Load();
+      lock (gate)
+      {
+        if (index < 0 || index >= data.Pieces.Count) return;
+        data.Pieces.RemoveAt(index);
+        Rebuild();
+      }
+      Save();
+    }
+
+    public static void Forget()
+    {
+      Load();
+      lock (gate) { data.Talk.Clear(); }
+      Save();
+    }
+
+    public static void Remember(string heard, string answer)
+    {
+      Load();
+      if (!Memory) return;
+      if (heard == null || answer == null) return;
+      heard = Regex.Replace(heard, "\\s+", " ").Trim();
+      answer = Regex.Replace(answer, "\\s+", " ").Trim();
+      if (heard.Length == 0 || answer.Length == 0) return;
+      if (heard.Length > 160) heard = heard.Substring(0, 160);
+      if (answer.Length > 220) answer = answer.Substring(0, 220);
+      lock (gate)
+      {
+        data.Talk.Add(heard + " → " + answer);
+        while (data.Talk.Count > 40) data.Talk.RemoveAt(0);
+      }
+      Save();
+    }
+
+    public static string Pack(string heard, string card)
+    {
+      Load();
+      LastHit = false;
+      List<string> found = Search(heard, 3);
+      string memory = Recent(heard);
+      StringBuilder sb = new StringBuilder();
+      if (card != null && card.Length > 0) sb.Append(card);
+      if (found.Count > 0)
+      {
+        LastHit = true;
+        sb.Append("\nИз записей: ");
+        int i;
+        for (i = 0; i < found.Count; i++)
+        {
+          if (i > 0) sb.Append(' ');
+          sb.Append(found[i]);
+        }
+      }
+      if (memory.Length > 0)
+      {
+        LastHit = true;
+        sb.Append("\nНедавно говорили: ");
+        sb.Append(memory);
+      }
+      string all = sb.ToString().Trim();
+      if (all.Length > 1200) all = all.Substring(0, 1200);
+      return all;
+    }
+
+    static string Recent(string heard)
+    {
+      if (!Memory) return "";
+      List<string> talk;
+      lock (gate) { talk = new List<string>(data.Talk); }
+      if (talk.Count == 0) return "";
+      StringBuilder sb = new StringBuilder();
+      int start = talk.Count - 2;
+      if (start < 0) start = 0;
+      int i;
+      for (i = start; i < talk.Count; i++)
+      {
+        if (sb.Length > 0) sb.Append(' ');
+        sb.Append(talk[i]);
+      }
+      string best = "";
+      int bestScore = 1;
+      for (i = 0; i < start; i++)
+      {
+        int score = Score(heard, talk[i]);
+        if (score > bestScore)
+        {
+          bestScore = score;
+          best = talk[i];
+        }
+      }
+      if (best.Length > 0)
+      {
+        if (sb.Length > 0) sb.Append(' ');
+        sb.Append(best);
+      }
+      string text = sb.ToString().Trim();
+      if (text.Length > 400) text = text.Substring(text.Length - 400);
+      return text;
+    }
+
+    static List<string> Search(string heard, int take)
+    {
+      List<string> pool;
+      lock (gate) { pool = new List<string>(chunks); }
+      List<string> found = new List<string>();
+      if (pool.Count == 0 || heard == null) return found;
+      int guard = 0;
+      while (found.Count < take && guard < 12)
+      {
+        guard++;
+        int best = -1;
+        int bestScore = 0;
+        int i;
+        for (i = 0; i < pool.Count; i++)
+        {
+          if (pool[i] == null) continue;
+          int score = Score(heard, pool[i]);
+          if (score > bestScore)
+          {
+            bestScore = score;
+            best = i;
+          }
+        }
+        if (best < 0 || bestScore < 1) break;
+        bool rare = bestScore >= 2 || LongWord(heard);
+        if (!rare && found.Count > 0) break;
+        if (bestScore < 1) break;
+        if (found.Count == 0 && bestScore < 1) break;
+        if (found.Count == 0 && !LongWord(heard) && bestScore < 2) break;
+        found.Add(pool[best]);
+        pool[best] = null;
+      }
+      return found;
+    }
+
+    static bool LongWord(string heard)
+    {
+      foreach (Match match in Regex.Matches(heard == null ? "" : heard.ToLowerInvariant(), "[а-яёa-z0-9]{5,}"))
+      {
+        if (!Stop(match.Value)) return true;
+      }
+      return false;
+    }
+
+    static int Score(string heard, string chunk)
+    {
+      if (chunk == null || heard == null) return 0;
+      string low = chunk.ToLowerInvariant();
+      int score = 0;
+      foreach (Match match in Regex.Matches(heard.ToLowerInvariant(), "[а-яёa-z0-9]{3,}"))
+      {
+        string word = Stem(match.Value);
+        if (word.Length < 3 || Stop(word)) continue;
+        if (low.IndexOf(word, StringComparison.Ordinal) >= 0) score += word.Length >= 6 ? 2 : 1;
+      }
+      return score;
+    }
+
+    static bool Stop(string word)
+    {
+      switch (word)
+      {
+        case "что":
+        case "как":
+        case "это":
+        case "она":
+        case "они":
+        case "люси":
+        case "lucy":
+        case "меня":
+        case "тебе":
+        case "тебя":
+        case "про":
+        case "для":
+        case "или":
+        case "если":
+        case "там":
+        case "где":
+        case "кто":
+        case "чем":
+        case "можно":
+        case "есть":
+        case "был":
+        case "была":
+        case "были":
+        case "ещё":
+        case "еще":
+        case "только":
+        case "просто":
+        case "когда":
+        case "почему":
+        case "зачем":
+        case "какой":
+        case "какая":
+        case "какие":
+        case "расскажи":
+        case "скажи":
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    static string Stem(string word)
+    {
+      string[] ends = new string[] { "ями", "ами", "ого", "ему", "ыми", "ими", "ая", "яя", "ое", "ее", "ый", "ий", "ой", "ых", "их", "ом", "ем", "ах", "ях", "ую", "юю" };
+      int i;
+      for (i = 0; i < ends.Length; i++)
+      {
+        if (word.Length - ends[i].Length >= 4 && word.EndsWith(ends[i], StringComparison.Ordinal)) return word.Substring(0, word.Length - ends[i].Length);
+      }
+      return word;
+    }
+
+    static List<string> Split(string text)
+    {
+      List<string> parts = new List<string>();
+      string[] lines = text.Replace("\r", "").Split('\n');
+      StringBuilder sb = new StringBuilder();
+      int i;
+      for (i = 0; i < lines.Length; i++)
+      {
+        string line = lines[i].Trim();
+        if (line.Length == 0)
+        {
+          Flush(parts, sb);
+          continue;
+        }
+        if (sb.Length > 0) sb.Append(' ');
+        sb.Append(line);
+        if (sb.Length >= 700) Flush(parts, sb);
+      }
+      Flush(parts, sb);
+      return parts;
+    }
+
+    static void Flush(List<string> parts, StringBuilder sb)
+    {
+      string text = sb.ToString().Trim();
+      sb.Length = 0;
+      if (text.Length < 40) return;
+      if (text.Length > 900) text = text.Substring(0, 900);
+      parts.Add(text);
+    }
+
+    static string CleanText(string text)
+    {
+      if (text == null) return "";
+      text = text.Replace("\u0000", " ");
+      text = Regex.Replace(text, "[\\t\\f\\v]+", " ");
+      text = Regex.Replace(text, "\n{3,}", "\n\n");
+      return text.Trim();
+    }
+
+    static string ReadDocx(string path)
+    {
+      using (ZipArchive zip = ZipFile.OpenRead(path))
+      {
+        ZipArchiveEntry entry = zip.GetEntry("word/document.xml");
+        if (entry == null) return "";
+        using (Stream stream = entry.Open())
+        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+        {
+          string xml = reader.ReadToEnd();
+          xml = xml.Replace("</w:p>", "\n").Replace("</w:tr>", "\n");
+          xml = Regex.Replace(xml, "<[^>]+>", "");
+          return CleanText(WebUtility.HtmlDecode(xml));
+        }
+      }
+    }
+
+    static string ReadDoc(string path)
+    {
+      byte[] data = File.ReadAllBytes(path);
+      StringBuilder utf = new StringBuilder();
+      int i;
+      for (i = 0; i + 1 < data.Length; i += 2)
+      {
+        char c = (char)(data[i] | (data[i + 1] << 8));
+        if (c == '\r' || c == '\n') utf.Append('\n');
+        else if (c == '\t') utf.Append(' ');
+        else if (Good(c)) utf.Append(c);
+        else if (utf.Length > 0 && utf[utf.Length - 1] != '\n') utf.Append('\n');
+      }
+      string text = CleanText(utf.ToString());
+      if (text.Length >= 80) return text;
+      try
+      {
+        Encoding dos = Encoding.GetEncoding(1251);
+        string raw = dos.GetString(data);
+      StringBuilder sb = new StringBuilder();
+      for (i = 0; i < raw.Length; i++)
+      {
+        char c = raw[i];
+        if (c == '\r' || c == '\n') sb.Append('\n');
+        else if (Good(c)) sb.Append(c);
+        else if (sb.Length > 0 && sb[sb.Length - 1] != '\n') sb.Append('\n');
+      }
+      return CleanText(sb.ToString());
+      }
+      catch
+      {
+        return text;
+      }
+    }
+
+    static bool Good(char c)
+    {
+      if (c >= 'а' && c <= 'я') return true;
+      if (c >= 'А' && c <= 'Я') return true;
+      if (c >= 'a' && c <= 'z') return true;
+      if (c >= 'A' && c <= 'Z') return true;
+      if (c >= '0' && c <= '9') return true;
+      if (c == 'ё' || c == 'Ё') return true;
+      return c == ' ' || c == ',' || c == '.' || c == '!' || c == '?' || c == ':' || c == ';' || c == '-' || c == '—' || c == '«' || c == '»' || c == '"' || c == '(' || c == ')';
+    }
+  }
+
+  public class LoreForm : Form
+  {
+    public static LoreForm Open;
+    ListBox files;
+    CheckBox memory;
+    Label stat;
+    TextBox titleBox;
+    TextBox bodyBox;
+
+    public LoreForm()
+    {
+      Open = this;
+      Text = "Лор Люси";
+      StartPosition = FormStartPosition.CenterParent;
+      ClientSize = new Size(720, 640);
+      MinimumSize = new Size(640, 560);
+      BackColor = Color.FromArgb(16, 14, 12);
+      ForeColor = Color.FromArgb(246, 239, 228);
+      Font = new Font("Segoe UI", 10f);
+      FormClosed += delegate { if (Open == this) Open = null; };
+
+      Label lead = new Label();
+      lead.Text = "Сюда книга, песни и гайды. На вопрос она открывает подходящий кусок, а не всю папку. Модель не переучивается и видеокарту не трогает. Короткое «кто ты» по-прежнему берётся из карточки в основном окне.";
+      lead.ForeColor = Color.FromArgb(176, 160, 140);
+      lead.SetBounds(20, 16, 680, 72);
+
+      files = new ListBox();
+      files.BackColor = Color.FromArgb(22, 17, 14);
+      files.ForeColor = Color.FromArgb(246, 239, 228);
+      files.BorderStyle = BorderStyle.None;
+      files.IntegralHeight = false;
+      files.SetBounds(20, 96, 680, 220);
+      files.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+      Button add = Make("Добавить файл", true);
+      add.SetBounds(20, 328, 180, 36);
+      add.Click += delegate { AddFiles(); };
+      Button drop = Make("Удалить", false);
+      drop.SetBounds(212, 328, 140, 36);
+      drop.Click += delegate
+      {
+        if (files.SelectedIndex < 0) return;
+        LucyLore.RemoveAt(files.SelectedIndex);
+        Fill();
+      };
+
+      memory = new CheckBox();
+      memory.Text = "Помнить последние разговоры";
+      memory.ForeColor = Color.FromArgb(246, 239, 228);
+      memory.BackColor = Color.FromArgb(16, 14, 12);
+      memory.SetBounds(20, 376, 320, 28);
+      memory.Checked = LucyLore.Memory;
+      memory.CheckedChanged += delegate { LucyLore.Memory = memory.Checked; };
+      Button forget = Make("Забыть разговоры", false);
+      forget.SetBounds(360, 372, 200, 36);
+      forget.Click += delegate { LucyLore.Forget(); Fill(); };
+
+      stat = new Label();
+      stat.ForeColor = Color.FromArgb(255, 138, 61);
+      stat.SetBounds(20, 414, 680, 24);
+
+      Label paste = new Label();
+      paste.Text = "Или вставь текст сюда. Название сверху, сам текст ниже.";
+      paste.ForeColor = Color.FromArgb(176, 160, 140);
+      paste.SetBounds(20, 446, 680, 24);
+      titleBox = Box();
+      titleBox.SetBounds(20, 474, 680, 28);
+      titleBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      bodyBox = Box();
+      bodyBox.Multiline = true;
+      bodyBox.ScrollBars = ScrollBars.Vertical;
+      bodyBox.SetBounds(20, 510, 680, 70);
+      bodyBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      Button put = Make("Добавить текст", true);
+      put.SetBounds(20, 590, 200, 36);
+      put.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+      put.Click += delegate
+      {
+        string note = LucyLore.AddText(titleBox.Text, bodyBox.Text);
+        if (note.Length > 0)
+        {
+          stat.Text = note;
+          return;
+        }
+        titleBox.Text = "";
+        bodyBox.Text = "";
+        Fill();
+      };
+
+      Controls.Add(lead);
+      Controls.Add(files);
+      Controls.Add(add);
+      Controls.Add(drop);
+      Controls.Add(memory);
+      Controls.Add(forget);
+      Controls.Add(stat);
+      Controls.Add(paste);
+      Controls.Add(titleBox);
+      Controls.Add(bodyBox);
+      Controls.Add(put);
+      Fill();
+    }
+
+    void Fill()
+    {
+      int index = files.SelectedIndex;
+      files.Items.Clear();
+      List<string> titles = LucyLore.Titles();
+      int i;
+      for (i = 0; i < titles.Count; i++) files.Items.Add(titles[i]);
+      if (index >= 0 && index < files.Items.Count) files.SelectedIndex = index;
+      stat.Text = "Кусков в поиске: " + LucyLore.Chunks().ToString(CultureInfo.InvariantCulture) + ". Файлы txt, md, docx. Старый doc лучше сохранить как docx.";
+    }
+
+    void AddFiles()
+    {
+      OpenFileDialog dlg = new OpenFileDialog();
+      dlg.Title = "Текст для Люси";
+      dlg.Filter = "Текст и Word|*.txt;*.md;*.docx;*.doc|Все файлы|*.*";
+      dlg.Multiselect = true;
+      if (dlg.ShowDialog(this) != DialogResult.OK) return;
+      int i;
+      for (i = 0; i < dlg.FileNames.Length; i++)
+      {
+        string note = "";
+        try
+        {
+          note = LucyLore.AddFile(dlg.FileNames[i]);
+        }
+        catch (Exception ex)
+        {
+          note = ex.Message == null ? "Файл не прочитался." : ex.Message;
+        }
+        if (note.Length > 0) stat.Text = Path.GetFileName(dlg.FileNames[i]) + ": " + note;
+      }
+      Fill();
+    }
+
+    static Button Make(string text, bool primary)
+    {
+      Button button = new Button();
+      button.Text = text;
+      button.FlatStyle = FlatStyle.Flat;
+      button.FlatAppearance.BorderSize = 0;
+      button.Height = 36;
+      button.BackColor = primary ? Color.FromArgb(255, 138, 61) : Color.FromArgb(42, 32, 26);
+      button.ForeColor = primary ? Color.FromArgb(20, 12, 8) : Color.FromArgb(246, 239, 228);
+      button.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+      return button;
+    }
+
+    TextBox Box()
+    {
+      TextBox box = new TextBox();
+      box.BorderStyle = BorderStyle.FixedSingle;
+      box.BackColor = Color.FromArgb(22, 17, 14);
+      box.ForeColor = Color.FromArgb(246, 239, 228);
+      return box;
     }
   }
 
@@ -4390,6 +5066,18 @@ namespace Rech
       lucyFacts.ScrollBars = ScrollBars.Vertical;
       lucyFacts.Text = LucyLocal.Card;
       Place(right, lucyFacts, 14, ref y, 110);
+      Button loreButton = MakeButton("Лор и память", false);
+      loreButton.Click += delegate
+      {
+        if (LoreForm.Open != null && !LoreForm.Open.IsDisposed)
+        {
+          LoreForm.Open.Activate();
+          return;
+        }
+        LoreForm lore = new LoreForm();
+        lore.Show(this);
+      };
+      Place(right, loreButton, 14, ref y, 36);
       Place(right, MakeCaption("НАГРАДЫ"), 14, ref y, 28);
       Place(right, MakeWrap("На Twitch создай две награды за баллы и включи «зритель вводит текст». Название должно совпасть с полями ниже. Песня не скачивается: в OBS играет официальный плеер. Чужую музыку поставь на дорожку, которая не пишется в запись эфира, иначе Twitch её заглушит."), 14, ref y, 92);
       Place(right, MakeMute("Client ID с dev.twitch.tv"), 14, ref y, 18);
@@ -5617,6 +6305,7 @@ namespace Rech
         try
         {
           answer = LucyLocal.Reply(author + ": " + heard, facts);
+          if (answer != null && answer.Length > 0) LucyLore.Remember(author + ": " + heard, answer);
         }
         catch (Exception ex)
         {
@@ -8636,6 +9325,7 @@ namespace Rech
           try
           {
             answer = LucyLocal.Reply(user + ": " + input, facts);
+            if (answer != null && answer.Length > 0) LucyLore.Remember(user + ": " + input, answer);
           }
           catch
           {

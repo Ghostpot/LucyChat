@@ -5570,6 +5570,7 @@ namespace Rech
       if (message == null || message.Id == null) return;
       if (seen.Contains(message.Id)) return;
       if (IsMuted(message.Author)) return;
+      if (Rewards.Echo(message.Author, message.Text, message.Platform)) return;
       seen.Add(message.Id);
       if (seen.Count > 4000) seen.Clear();
       Row row = new Row();
@@ -5920,7 +5921,7 @@ namespace Rech
       string line = Spoken(message.Author, raw);
       if (line.Length == 0) return;
       bool donate = message.Platform == "da" || message.Platform == "boosty";
-      string voice = VoiceFor(message.SourceId, message.Author);
+      string voice = message.Platform == "lucy" ? "xenia" : VoiceFor(message.SourceId, message.Author);
       bool english = englishLine;
       if (voicePaused) return;
       int wait = delayBox == null ? 0 : (int)delayBox.Value;
@@ -6308,7 +6309,7 @@ namespace Rech
       AddMessage(message);
       if (speak)
       {
-        speaker.Say(message.Text, true);
+        speaker.Say(message.Text, true, "xenia");
         string line = message.Text;
         Thread post = new Thread(delegate()
         {
@@ -8043,6 +8044,8 @@ namespace Rech
     static string channelName = "";
     static string broadLogin = "";
     static string broadId = "";
+    static string lastLine = "";
+    static DateTime lastAt;
 
     public static void Apply(RewardPrefs next)
     {
@@ -8202,12 +8205,38 @@ namespace Rech
       return string.Equals(author.Trim(), botLogin, StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool Echo(string author, string text, string platform)
+    {
+      if (platform == "lucy") return false;
+      if (IsOwn(author)) return true;
+      string heard = text == null ? "" : text.Trim();
+      if (heard.Length == 0) return false;
+      lock (gate)
+      {
+        if (lastLine.Length == 0 || !string.Equals(heard, lastLine, StringComparison.Ordinal)) return false;
+        return (DateTime.UtcNow - lastAt).TotalSeconds < 40;
+      }
+    }
+
+    static void Remember(string text)
+    {
+      if (text == null) return;
+      text = text.Trim();
+      if (text.Length == 0) return;
+      lock (gate)
+      {
+        lastLine = text;
+        lastAt = DateTime.UtcNow;
+      }
+    }
+
     public static string PostToTwitch(string text)
     {
       if (text == null) return "";
       text = Regex.Replace(text, "\\s+", " ").Trim();
       if (text.Length == 0) return "";
       if (text.Length > 450) text = text.Substring(0, 450).Trim();
+      Remember(text);
       string token;
       string refresh;
       string client;

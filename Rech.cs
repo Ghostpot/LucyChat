@@ -2417,7 +2417,8 @@ namespace Rech
   public class LucyLocal
   {
     const string ZipUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b11951/llama-b11951-bin-win-cpu-x64.zip";
-    const string ModelUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+    const string ModelId = "qwen2.5-7b-q4";
+    const string ModelUrl = "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf";
 
     public static string Home()
     {
@@ -2434,13 +2435,20 @@ namespace Rech
       return Path.Combine(Home(), "lucy.gguf");
     }
 
+    static string StampFile()
+    {
+      return Path.Combine(Home(), "model.id");
+    }
+
     public static bool Ready
     {
       get
       {
         try
         {
-          return File.Exists(Exe()) && File.Exists(ModelFile()) && new FileInfo(ModelFile()).Length > 800L * 1024L * 1024L;
+          if (!File.Exists(Exe()) || !File.Exists(ModelFile()) || !File.Exists(StampFile())) return false;
+          if (new FileInfo(ModelFile()).Length < 4000L * 1024L * 1024L) return false;
+          return File.ReadAllText(StampFile()).Trim() == ModelId;
         }
         catch
         {
@@ -2458,9 +2466,9 @@ namespace Rech
       if (drive != null && drive.Length > 0)
       {
         DriveInfo info = new DriveInfo(drive);
-        if (info.IsReady && info.AvailableFreeSpace < 1600L * 1024L * 1024L)
+        if (info.IsReady && info.AvailableFreeSpace < 6500L * 1024L * 1024L)
         {
-          throw new Exception("Для Люси нужно около 1.5 ГБ свободных на диске.");
+          throw new Exception("Для новой Люси нужно около 6 ГБ свободных на диске.");
         }
       }
       if (!File.Exists(Exe()))
@@ -2473,8 +2481,21 @@ namespace Rech
         try { File.Delete(zip); } catch { }
       }
       if (!File.Exists(Exe())) throw new Exception("Движок Люси не распаковался.");
-      if (status != null) status("Качаю маленькую модель, около 1 ГБ…");
-      SileroLocal.Download(ModelUrl, ModelFile(), status, "Модель");
+      bool same = false;
+      try
+      {
+        same = File.Exists(StampFile()) && File.ReadAllText(StampFile()).Trim() == ModelId && File.Exists(ModelFile()) && new FileInfo(ModelFile()).Length > 4000L * 1024L * 1024L;
+      }
+      catch
+      {
+      }
+      if (!same)
+      {
+        try { if (File.Exists(ModelFile())) File.Delete(ModelFile()); } catch { }
+        if (status != null) status("Качаю модель поумнее, около 5 ГБ. Видеокарту не трогаю.");
+        SileroLocal.Download(ModelUrl, ModelFile(), status, "Модель");
+        File.WriteAllText(StampFile(), ModelId, new UTF8Encoding(false));
+      }
       if (!Ready) throw new Exception("Модель Люси скачалась не до конца.");
       if (status != null) status("Люси на месте.");
     }
@@ -2636,8 +2657,8 @@ namespace Rech
       string known = LucyLore.Pack(line, card);
       bool lore = LucyLore.LastHit;
       string rule = lore
-        ? "Ты Люси и говоришь от первого лица. Ответь по-русски одной или двумя фразами строго по отрывку ниже. Оставайся в этом месте и не называй другие миры. Не представляйся. Не говори, что ты между мирами, что ты не рысь и не книга. Если в отрывке нет ответа, скажи только: не помню этого.\n"
-        : "Ты Люси и говоришь от первого лица. Ответь по-русски одной короткой фразой и только по тексту ниже. Не представляйся и не перечисляй миры, если об этом не спросили.\n";
+        ? "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна или две фразы. Опирайся на отрывок ниже и можешь связать его с вопросом своими словами. Не выдумывай новых имён и событий. Не представляйся. Не говори, что ты между мирами.\n"
+        : "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Ответь по тексту ниже и можешь чуть додумать, но не выдумывай факты. Не представляйся и не перечисляй миры.\n";
       File.WriteAllText(systemPath, rule + known, new UTF8Encoding(false));
       File.WriteAllText(userPath, line, new UTF8Encoding(false));
       ProcessStartInfo info = new ProcessStartInfo();
@@ -2650,7 +2671,10 @@ namespace Rech
       info.RedirectStandardInput = true;
       info.StandardOutputEncoding = new UTF8Encoding(false);
       info.StandardErrorEncoding = new UTF8Encoding(false);
-      info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers 0 --threads 2 --ctx-size " + (lore ? "1536" : "1024") + " --n-predict " + (lore ? "80" : "28") + " --temp " + (lore ? "0.35" : "0.6") + " --repeat-penalty 1.18";
+      int threads = Environment.ProcessorCount / 2;
+      if (threads < 2) threads = 2;
+      if (threads > 4) threads = 4;
+      info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers 0 --threads " + threads.ToString(CultureInfo.InvariantCulture) + " --ctx-size " + (lore ? "2048" : "1024") + " --n-predict " + (lore ? "96" : "40") + " --temp " + (lore ? "0.55" : "0.7") + " --repeat-penalty 1.15";
       Process proc = new Process();
       proc.StartInfo = info;
       StringBuilder stdout = new StringBuilder();
@@ -4082,7 +4106,7 @@ namespace Rech
       string part = dest + ".part";
       using (HttpClient client = new HttpClient())
       {
-        client.Timeout = TimeSpan.FromMinutes(30);
+        client.Timeout = TimeSpan.FromMinutes(120);
         client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", Net.UserAgent);
         using (HttpResponseMessage response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).Result)
         {
@@ -6491,7 +6515,7 @@ namespace Rech
       if (lucyState == null || lucyInstall == null) return;
       if (!LucyLocal.Ready)
       {
-        lucyState.Text = "Если в чате написали «Люси». Один раз скачай модель, около 1 ГБ. Дальше работает без интернета.";
+        lucyState.Text = "Нужна модель поумнее, около 5 ГБ, один раз. Считает процессором, видеокарту не занимает.";
         lucyInstall.Text = "Скачать Люси";
         lucyInstall.Enabled = true;
         return;

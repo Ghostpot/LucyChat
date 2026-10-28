@@ -14,7 +14,7 @@
     <Company>Ghostpot</Company>
     <Copyright>Ghostpot — https://ghostpot.ru</Copyright>
     <Description>Люси читает чат эфира</Description>
-    <Version>1.6.3</Version>
+    <Version>1.6.4</Version>
     <ApplicationIcon>lucy.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -32,6 +32,7 @@
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <PackageReference Include="System.Speech" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
@@ -42,4 +43,7 @@
     <None Remove="**/*.bat" />
     <None Remove="**/*.txt" />
   </ItemGroup>
+  <Target Name="CopyWebView2Loader" AfterTargets="Publish">
+    <Copy SourceFiles="$(OutputPath)runtimes/win-x64/native/WebView2Loader.dll" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

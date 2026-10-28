@@ -24,6 +24,8 @@ using System.Windows.Forms;
 using NAudio.Wave;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
 namespace Rech
 {
@@ -5132,7 +5134,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("В OBS только ролик, без плашки и чёрного поля. У источника «Браузер» нажми «Обновить» и включи «Управлять звуком через OBS»."), 14, ref y, 58);
+      Place(right, MakeMute("Клип открывается окном «ЛюсиЧат — клип» и сам гаснет. В OBS: источник «Захват окна», это окно. Старый «Браузер» убери, он даёт чёрный прямоугольник. Звук идёт в колонки."), 14, ref y, 72);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -7048,6 +7050,7 @@ namespace Rech
       if (rewardState != null) rewardState.Text = Rewards.Status;
       if (botState != null) botState.Text = Rewards.BotStatus;
       if (songNow != null) songNow.Text = Rewards.NowText();
+      ClipWindow.Sync(Rewards.CurrentEmbed());
       if (speaker.LastError != null && speaker.LastError.Length > 0) errorLabel.Text = speaker.LastError;
       else errorLabel.Text = "";
     }
@@ -9131,6 +9134,15 @@ namespace Rech
       }
     }
 
+    public static string CurrentEmbed()
+    {
+      lock (gate)
+      {
+        if (concealed || now == null || now.Embed == null) return "";
+        return now.Embed;
+      }
+    }
+
     public static string NowJson()
     {
       lock (gate)
@@ -9784,7 +9796,7 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body,#box{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;background:transparent;display:block}</style></head><body><div id=\"box\"></div><script>var last='';function clearBox(){document.getElementById('box').innerHTML='';}function show(src){var box=document.getElementById('box');box.innerHTML='';var f=document.createElement('iframe');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture');f.setAttribute('allowfullscreen','');f.src=src;box.appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j.embed);}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)
@@ -12400,6 +12412,101 @@ namespace Rech
       catch
       {
         return "";
+      }
+    }
+  }
+
+  public class ClipWindow : Form
+  {
+    static ClipWindow open;
+    readonly WebView2 view;
+    readonly Label note;
+    string shown = "";
+    bool starting;
+
+    public static void Sync(string url)
+    {
+      if (url == null) url = "";
+      if (url.Length == 0)
+      {
+        if (open != null && !open.IsDisposed) open.Apply("");
+        return;
+      }
+      if (open == null || open.IsDisposed) open = new ClipWindow();
+      open.Apply(url);
+    }
+
+    public ClipWindow()
+    {
+      Text = "ЛюсиЧат — клип";
+      FormBorderStyle = FormBorderStyle.None;
+      StartPosition = FormStartPosition.CenterScreen;
+      ClientSize = new Size(960, 540);
+      BackColor = Color.Black;
+      ShowInTaskbar = true;
+      view = new WebView2();
+      view.Dock = DockStyle.Fill;
+      view.DefaultBackgroundColor = Color.Black;
+      note = new Label();
+      note.Dock = DockStyle.Fill;
+      note.ForeColor = Color.White;
+      note.BackColor = Color.Black;
+      note.TextAlign = ContentAlignment.MiddleCenter;
+      note.Visible = false;
+      Controls.Add(view);
+      Controls.Add(note);
+    }
+
+    void Apply(string url)
+    {
+      if (url == null) url = "";
+      if (url.Length == 0)
+      {
+        shown = "";
+        Hide();
+        try
+        {
+          if (view.CoreWebView2 != null) view.CoreWebView2.Navigate("about:blank");
+        }
+        catch
+        {
+        }
+        return;
+      }
+      if (url == shown && Visible) return;
+      shown = url;
+      if (!Visible) Show();
+      note.Visible = false;
+      Begin();
+    }
+
+    async void Begin()
+    {
+      if (starting) return;
+      starting = true;
+      try
+      {
+        if (view.CoreWebView2 == null)
+        {
+          string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech", "clip");
+          Directory.CreateDirectory(dir);
+          CoreWebView2Environment env = await CoreWebView2Environment.CreateAsync(null, dir, new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required"));
+          await view.EnsureCoreWebView2Async(env);
+          view.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+          view.CoreWebView2.Settings.IsStatusBarEnabled = false;
+          view.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+        }
+        if (shown.Length > 0) view.CoreWebView2.Navigate(shown);
+      }
+      catch (Exception ex)
+      {
+        note.Text = "Клип не открылся. Нужен компонент Microsoft Edge WebView2.\n" + ex.Message;
+        note.Visible = true;
+        note.BringToFront();
+      }
+      finally
+      {
+        starting = false;
       }
     }
   }

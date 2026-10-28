@@ -5134,7 +5134,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("Клип на экран не вылезает. В OBS один раз: источник «Захват окна», окно «ЛюсиЧат — клип», метод «Windows 10». Поставь его на сцену куда нужно. Звук идёт в колонки, зрители слышат его со стрима."), 14, ref y, 72);
+      Place(right, MakeMute("Клип на экран не вылезает. В OBS источник «Захват окна» должен быть именно «ЛюсиЧат — клип», не главное окно. Когда песня кончилась, это место пустое. Чат туда больше не подставится."), 14, ref y, 72);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -9756,6 +9756,11 @@ namespace Rech
           body = Encoding.UTF8.GetBytes("ok");
           type = "text/plain; charset=utf-8";
         }
+        else if (path == "/player/off")
+        {
+          body = Encoding.UTF8.GetBytes("<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:#000}</style></head><body></body></html>");
+          type = "text/html; charset=utf-8";
+        }
         else if (path == "/player")
         {
           body = Encoding.UTF8.GetBytes(PlayerPage());
@@ -12458,12 +12463,7 @@ namespace Rech
       if (url == null) url = "";
       if (url.Length == 0)
       {
-        if (open != null && !open.IsDisposed)
-        {
-          ClipWindow dying = open;
-          open = null;
-          dying.Close();
-        }
+        if (open != null && !open.IsDisposed) open.Apply("");
         return;
       }
       if (open == null || open.IsDisposed) open = new ClipWindow();
@@ -12512,15 +12512,22 @@ namespace Rech
       if (url == null) url = "";
       if (url.Length == 0)
       {
-        shown = "";
+        if (shown == "off") return;
+        shown = "off";
         try
         {
-          if (view.CoreWebView2 != null) view.CoreWebView2.Navigate("about:blank");
+          if (view.CoreWebView2 != null)
+          {
+            string off = Home == null ? "" : Home;
+            if (off.EndsWith("/player")) off = off + "/off";
+            if (off.Length == 0) off = "about:blank";
+            view.CoreWebView2.Navigate(off);
+          }
         }
         catch
         {
         }
-        Hide();
+        Park();
         return;
       }
       if (!Visible) Show();

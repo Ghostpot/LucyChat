@@ -15,6 +15,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -5134,7 +5135,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("Клип на экран не вылезает. В OBS источник «Захват окна» должен быть именно «ЛюсиЧат — клип», не главное окно. Когда песня кончилась, это место пустое. Чат туда больше не подставится."), 14, ref y, 72);
+      Place(right, MakeMute("Когда песни нет, плашка в OBS сама гаснет и игра видна. Источник «Захват окна» оставь на «ЛюсиЧат — клип». Если плашка осталась, в OBS: Инструменты → Настройки вебсокета → включить сервер."), 14, ref y, 72);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -7052,6 +7053,7 @@ namespace Rech
       if (botState != null) botState.Text = Rewards.BotStatus;
       if (songNow != null) songNow.Text = Rewards.NowText();
       ClipWindow.Sync(Rewards.CurrentEmbed());
+      ObsEye.Want(Rewards.CurrentEmbed().Length > 0);
       if (speaker.LastError != null && speaker.LastError.Length > 0) errorLabel.Text = speaker.LastError;
       else errorLabel.Text = "";
     }
@@ -12565,6 +12567,178 @@ namespace Rech
       finally
       {
         starting = false;
+      }
+    }
+  }
+
+  public static class ObsEye
+  {
+    static readonly object gate = new object();
+    static bool busy;
+    static bool latest;
+    static bool have;
+
+    public static void Want(bool on)
+    {
+      lock (gate)
+      {
+        if (have && latest == on) return;
+        latest = on;
+        have = true;
+        if (busy) return;
+        busy = true;
+      }
+      ThreadPool.QueueUserWorkItem(delegate { Run(); });
+    }
+
+    static void Run()
+    {
+      while (true)
+      {
+        bool on;
+        lock (gate) on = latest;
+        try { Push(on); } catch { }
+        lock (gate)
+        {
+          if (latest == on)
+          {
+            busy = false;
+            return;
+          }
+        }
+      }
+    }
+
+    static void Push(bool on)
+    {
+      int port = 4455;
+      string password = "";
+      try
+      {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "obs-studio", "plugin_config", "obs-websocket", "config.json");
+        if (File.Exists(path))
+        {
+          JObject cfg = JObject.Parse(File.ReadAllText(path));
+          if (cfg["server_port"] != null) port = (int)cfg["server_port"];
+          if (cfg["server_password"] != null) password = (string)cfg["server_password"];
+          if (cfg["server_enabled"] != null && cfg["server_enabled"].Type == JTokenType.Boolean && !(bool)cfg["server_enabled"]) return;
+        }
+      }
+      catch
+      {
+      }
+      using (ClientWebSocket socket = new ClientWebSocket())
+      using (CancellationTokenSource cancel = new CancellationTokenSource(TimeSpan.FromSeconds(4)))
+      {
+        socket.ConnectAsync(new Uri("ws://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture)), cancel.Token).GetAwaiter().GetResult();
+        JObject hello = JObject.Parse(Read(socket, cancel.Token));
+        JObject identify = new JObject();
+        identify["op"] = 1;
+        JObject helloData = new JObject();
+        helloData["rpcVersion"] = 1;
+        JToken auth = hello["d"] == null ? null : hello["d"]["authentication"];
+        if (auth != null && auth.Type == JTokenType.Object)
+        {
+          helloData["authentication"] = Sign(password, (string)auth["salt"], (string)auth["challenge"]);
+        }
+        identify["d"] = helloData;
+        Send(socket, identify.ToString(Formatting.None), cancel.Token);
+        Read(socket, cancel.Token);
+        JObject inputs = Ask(socket, "GetInputList", null, cancel.Token);
+        List<string> names = new List<string>();
+        JArray rows = inputs == null ? null : inputs["responseData"]["inputs"] as JArray;
+        if (rows != null)
+        {
+          foreach (JToken row in rows)
+          {
+            string kind = (string)row["inputKind"];
+            string name = (string)row["inputName"];
+            if (kind == null || name == null || kind.IndexOf("window", StringComparison.OrdinalIgnoreCase) < 0) continue;
+            JObject data = new JObject();
+            data["inputName"] = name;
+            JObject settings = Ask(socket, "GetInputSettings", data, cancel.Token);
+            string window = "";
+            try { window = (string)settings["responseData"]["inputSettings"]["window"]; } catch { }
+            if (window != null && window.IndexOf("клип", StringComparison.OrdinalIgnoreCase) >= 0) names.Add(name);
+          }
+        }
+        if (names.Count == 0) return;
+        JObject scenes = Ask(socket, "GetSceneList", null, cancel.Token);
+        JArray sceneRows = scenes == null ? null : scenes["responseData"]["scenes"] as JArray;
+        if (sceneRows == null) return;
+        foreach (JToken sceneRow in sceneRows)
+        {
+          string scene = (string)sceneRow["sceneName"];
+          if (scene == null || scene.Length == 0) continue;
+          JObject sceneData = new JObject();
+          sceneData["sceneName"] = scene;
+          JObject items = Ask(socket, "GetSceneItemList", sceneData, cancel.Token);
+          JArray itemRows = items == null ? null : items["responseData"]["sceneItems"] as JArray;
+          if (itemRows == null) continue;
+          foreach (JToken item in itemRows)
+          {
+            string source = (string)item["sourceName"];
+            if (source == null || !names.Contains(source)) continue;
+            JObject toggle = new JObject();
+            toggle["sceneName"] = scene;
+            toggle["sceneItemId"] = item["sceneItemId"];
+            toggle["sceneItemEnabled"] = on;
+            Ask(socket, "SetSceneItemEnabled", toggle, cancel.Token);
+          }
+        }
+      }
+    }
+
+    static string Sign(string password, string salt, string challenge)
+    {
+      using (SHA256 sha = SHA256.Create())
+      {
+        string secret = Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes((password ?? "") + (salt ?? ""))));
+        return Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(secret + (challenge ?? ""))));
+      }
+    }
+
+    static JObject Ask(ClientWebSocket socket, string type, JObject data, CancellationToken token)
+    {
+      string id = Guid.NewGuid().ToString("N");
+      JObject msg = new JObject();
+      msg["op"] = 6;
+      JObject body = new JObject();
+      body["requestType"] = type;
+      body["requestId"] = id;
+      if (data != null) body["requestData"] = data;
+      msg["d"] = body;
+      Send(socket, msg.ToString(Formatting.None), token);
+      int i;
+      for (i = 0; i < 12; i++)
+      {
+        JObject root = JObject.Parse(Read(socket, token));
+        if ((int)root["op"] != 7) continue;
+        if ((string)root["d"]["requestId"] != id) continue;
+        return (JObject)root["d"];
+      }
+      return null;
+    }
+
+    static void Send(ClientWebSocket socket, string json, CancellationToken token)
+    {
+      byte[] raw = Encoding.UTF8.GetBytes(json);
+      socket.SendAsync(new ArraySegment<byte>(raw), WebSocketMessageType.Text, true, token).GetAwaiter().GetResult();
+    }
+
+    static string Read(ClientWebSocket socket, CancellationToken token)
+    {
+      byte[] buf = new byte[65536];
+      using (MemoryStream stream = new MemoryStream())
+      {
+        while (true)
+        {
+          WebSocketReceiveResult result = socket.ReceiveAsync(new ArraySegment<byte>(buf), token).GetAwaiter().GetResult();
+          if (result.MessageType == WebSocketMessageType.Close) return "";
+          stream.Write(buf, 0, result.Count);
+          if (result.EndOfMessage) break;
+        }
+        return Encoding.UTF8.GetString(stream.ToArray());
       }
     }
   }

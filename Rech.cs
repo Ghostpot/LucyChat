@@ -257,6 +257,9 @@ namespace Rech
     public string TwitchClientId;
     public string TwitchToken;
     public string TwitchRefresh;
+    public string TwitchBotToken;
+    public string TwitchBotRefresh;
+    public string TwitchBotLogin;
     public string SongReward;
     public string LucyReward;
     public int SongSeconds;
@@ -4060,6 +4063,10 @@ namespace Rech
     TextBox playerBox;
     string twitchToken = "";
     string twitchRefresh = "";
+    string twitchBotToken = "";
+    string twitchBotRefresh = "";
+    string twitchBotLogin = "";
+    Label botState;
     bool lucyBusy;
     DateTime lucyReadyAt;
     CheckBox authorBox;
@@ -4366,11 +4373,16 @@ namespace Rech
       Place(right, sileroInstall, 14, ref y, 36);
       lucyBox = MakeCheck("Люси отвечает");
       Place(right, lucyBox, 14, ref y, 28);
-      lucyState = MakeWrap("Если в чате написали «Люси». Маленькая модель, два ядра, видеокарту не трогает и между ответами молчит.");
+      lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
       Place(right, lucyState, 14, ref y, 58);
       lucyInstall = MakeButton("Скачать Люси", true);
       lucyInstall.Click += delegate { StartLucyInstall(); };
       Place(right, lucyInstall, 14, ref y, 36);
+      Button lucyLogin = MakeButton("Войти как Lucy", true);
+      lucyLogin.Click += delegate { Rewards.BeginBotLogin(twitchClient == null ? "" : twitchClient.Text); };
+      Place(right, lucyLogin, 14, ref y, 36);
+      botState = MakeWrap("В чат Twitch ещё не входит. Нужен отдельный аккаунт Lucy и модератор на твоём канале.");
+      Place(right, botState, 14, ref y, 48);
       Place(right, MakeMute("Что Люси знает. Можно править."), 14, ref y, 18);
       lucyFacts = new TextBox();
       StyleBox(lucyFacts);
@@ -4720,6 +4732,17 @@ namespace Rech
           SaveSettings();
         }));
       };
+      Rewards.BotReady += delegate(string access, string refresh, string login)
+      {
+        if (IsDisposed) return;
+        BeginInvoke(new Action(delegate
+        {
+          twitchBotToken = access == null ? "" : access;
+          twitchBotRefresh = refresh == null ? "" : refresh;
+          if (login != null && login.Length > 0) twitchBotLogin = login;
+          SaveSettings();
+        }));
+      };
       Rewards.Apply(RewardPrefsNow());
       ApplyVoice();
       ShowSileroReady();
@@ -4935,6 +4958,9 @@ namespace Rech
       if (twitchClient != null) twitchClient.Text = settings.TwitchClientId == null ? "" : settings.TwitchClientId;
       twitchToken = settings.TwitchToken == null ? "" : settings.TwitchToken;
       twitchRefresh = settings.TwitchRefresh == null ? "" : settings.TwitchRefresh;
+      twitchBotToken = settings.TwitchBotToken == null ? "" : settings.TwitchBotToken;
+      twitchBotRefresh = settings.TwitchBotRefresh == null ? "" : settings.TwitchBotRefresh;
+      twitchBotLogin = settings.TwitchBotLogin == null ? "" : settings.TwitchBotLogin;
       if (songRewardBox != null) songRewardBox.Text = settings.SongReward == null || settings.SongReward.Length == 0 ? "Заказать песню" : settings.SongReward;
       if (lucyRewardBox != null) lucyRewardBox.Text = settings.LucyReward == null || settings.LucyReward.Length == 0 ? "Поговорить с Люси" : settings.LucyReward;
       if (songSecondsBox != null) songSecondsBox.Text = settings.SongSeconds < 20 ? "75" : settings.SongSeconds.ToString(CultureInfo.InvariantCulture);
@@ -5572,6 +5598,7 @@ namespace Rech
     {
       if (lucyBox == null || !lucyBox.Checked || message == null) return;
       if (message.Platform == "lucy") return;
+      if (Rewards.IsOwn(message.Author)) return;
       if (!LucyLocal.Ready || lucyBusy) return;
       if (DateTime.UtcNow < lucyReadyAt) return;
       string heard = message.Text == null ? "" : message.Text.Replace("\uFFFC", " ");
@@ -5579,6 +5606,7 @@ namespace Rech
       if (!Regex.IsMatch(heard, "(?<![a-zа-яё])(люси|люся|lucy)(?![a-zа-яё])", RegexOptions.IgnoreCase)) return;
       string author = message.Author == null ? "зритель" : message.Author;
       string facts = lucyFacts == null ? LucyLocal.Card : lucyFacts.Text;
+      Rewards.Apply(RewardPrefsNow());
       lucyBusy = true;
       lucyReadyAt = DateTime.UtcNow.AddSeconds(45);
       if (lucyState != null) lucyState.Text = "Люси думает…";
@@ -5596,6 +5624,7 @@ namespace Rech
         }
         string say = answer;
         string note = LucyLocal.LastNote;
+        string posted = say.Length == 0 ? "" : Rewards.PostToTwitch(say);
         try
         {
           BeginInvoke(new Action(delegate
@@ -5607,7 +5636,7 @@ namespace Rech
               if (lucyState != null) lucyState.Text = note != null && note.Length > 0 ? note : "Люси промолчала. Позови ещё раз.";
               return;
             }
-            if (lucyState != null) lucyState.Text = "Люси на месте. Отвечает, когда её зовут, и сразу замолкает.";
+            if (lucyState != null) lucyState.Text = posted.Length > 0 ? posted : "Люси написала в чат Twitch.";
             ChatMessage reply = new ChatMessage();
             reply.Id = "lucy:" + Guid.NewGuid().ToString("N");
             reply.Platform = "lucy";
@@ -6221,6 +6250,21 @@ namespace Rech
       if (stick) downButton.Visible = false;
     }
 
+    string FirstTwitch()
+    {
+      foreach (SourceConfig source in sources)
+      {
+        if (source == null || !source.Enabled || source.Platform != "twitch" || source.Input == null) continue;
+        string channel = source.Input.Trim().ToLowerInvariant();
+        channel = Regex.Replace(channel, "^https?://(www\\.)?twitch\\.tv/", "");
+        int slash = channel.IndexOf('/');
+        if (slash >= 0) channel = channel.Substring(0, slash);
+        if (channel.StartsWith("#")) channel = channel.Substring(1);
+        if (channel.Length > 0) return channel;
+      }
+      return "";
+    }
+
     RewardPrefs RewardPrefsNow()
     {
       RewardPrefs prefs = new RewardPrefs();
@@ -6238,6 +6282,10 @@ namespace Rech
       prefs.Rutube = songRuBox == null || songRuBox.Checked;
       prefs.Vk = songVkBox == null || songVkBox.Checked;
       prefs.Facts = lucyFacts == null ? LucyLocal.Card : lucyFacts.Text;
+      prefs.BotToken = twitchBotToken == null ? "" : twitchBotToken;
+      prefs.BotRefresh = twitchBotRefresh == null ? "" : twitchBotRefresh;
+      prefs.BotLogin = twitchBotLogin == null ? "" : twitchBotLogin;
+      prefs.Channel = FirstTwitch();
       return prefs;
     }
 
@@ -6258,7 +6306,26 @@ namespace Rech
       message.Ts = Net.Now();
       message.Fresh = false;
       AddMessage(message);
-      if (speak) speaker.Say(message.Text, true);
+      if (speak)
+      {
+        speaker.Say(message.Text, true);
+        string line = message.Text;
+        Thread post = new Thread(delegate()
+        {
+          string note = Rewards.PostToTwitch(line);
+          if (note == null || note.Length == 0 || IsDisposed) return;
+          try
+          {
+            BeginInvoke(new Action(delegate { if (lucyState != null) lucyState.Text = note; }));
+          }
+          catch
+          {
+          }
+        });
+        post.IsBackground = true;
+        post.Name = "LucyTwitch";
+        post.Start();
+      }
     }
 
     void RefreshState()
@@ -6275,6 +6342,7 @@ namespace Rech
       if (live > 0) text = text + " · каналов " + live.ToString(CultureInfo.InvariantCulture);
       stateLabel.Text = text;
       if (rewardState != null) rewardState.Text = Rewards.Status;
+      if (botState != null) botState.Text = Rewards.BotStatus;
       if (songNow != null) songNow.Text = Rewards.NowText();
       if (speaker.LastError != null && speaker.LastError.Length > 0) errorLabel.Text = speaker.LastError;
       else errorLabel.Text = "";
@@ -6379,6 +6447,9 @@ namespace Rech
       settings.TwitchClientId = twitchClient == null ? "" : twitchClient.Text.Trim();
       settings.TwitchToken = twitchToken == null ? "" : twitchToken;
       settings.TwitchRefresh = twitchRefresh == null ? "" : twitchRefresh;
+      settings.TwitchBotToken = twitchBotToken == null ? "" : twitchBotToken;
+      settings.TwitchBotRefresh = twitchBotRefresh == null ? "" : twitchBotRefresh;
+      settings.TwitchBotLogin = twitchBotLogin == null ? "" : twitchBotLogin;
       settings.SongReward = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       settings.LucyReward = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       int songSeconds = 75;
@@ -7934,6 +8005,10 @@ namespace Rech
     public bool Rutube;
     public bool Vk;
     public string Facts;
+    public string BotToken;
+    public string BotRefresh;
+    public string BotLogin;
+    public string Channel;
   }
 
   public class SongItem
@@ -7959,6 +8034,15 @@ namespace Rech
     public static string UserCode = "";
     public static event Action<string, string, bool> Line;
     public static event Action<string, string> TokenReady;
+    public static event Action<string, string, string> BotReady;
+    public static string BotStatus = "В чат Twitch ещё не входит.";
+    static string botToken = "";
+    static string botRefresh = "";
+    static string botUserId = "";
+    static string botLogin = "";
+    static string channelName = "";
+    static string broadLogin = "";
+    static string broadId = "";
 
     public static void Apply(RewardPrefs next)
     {
@@ -7967,6 +8051,10 @@ namespace Rech
       {
         bool restart = next.ClientId != prefs.ClientId || next.Token != prefs.Token;
         prefs = next;
+        botToken = next.BotToken == null ? "" : next.BotToken;
+        botRefresh = next.BotRefresh == null ? "" : next.BotRefresh;
+        botLogin = next.BotLogin == null ? "" : next.BotLogin;
+        channelName = next.Channel == null ? "" : next.Channel;
         if (restart) generation = generation + 1;
       }
       Start();
@@ -7989,19 +8077,39 @@ namespace Rech
         Status = "Нужен Client ID с dev.twitch.tv. Секрет приложения не нужен.";
         return;
       }
-      Thread thread = new Thread(delegate() { Login(clientId); });
+      Thread thread = new Thread(delegate() { Login(clientId, false); });
       thread.IsBackground = true;
       thread.Name = "TwitchLogin";
       thread.Start();
     }
 
-    static void Login(string clientId)
+    public static void BeginBotLogin(string clientId)
     {
+      clientId = clientId == null ? "" : clientId.Trim();
+      if (clientId.Length < 10)
+      {
+        BotStatus = "Нужен тот же Client ID. Секрет не нужен.";
+        return;
+      }
+      Thread thread = new Thread(delegate() { Login(clientId, true); });
+      thread.IsBackground = true;
+      thread.Name = "LucyLogin";
+      thread.Start();
+    }
+
+    static void Login(string clientId, bool bot)
+    {
+      Action<string> say = delegate(string text)
+      {
+        if (bot) BotStatus = text;
+        else Status = text;
+      };
       try
       {
-        Status = "Прошу код у Twitch…";
+        say("Прошу код у Twitch…");
         UserCode = "";
-        string body = "client_id=" + Uri.EscapeDataString(clientId) + "&scopes=" + Uri.EscapeDataString("channel:read:redemptions channel:manage:redemptions");
+        string scopes = bot ? "user:write:chat" : "channel:read:redemptions channel:manage:redemptions";
+        string body = "client_id=" + Uri.EscapeDataString(clientId) + "&scopes=" + Uri.EscapeDataString(scopes);
         string json = PostForm("https://id.twitch.tv/oauth2/device", body);
         JObject root = JObject.Parse(json);
         string device = (string)root["device_code"];
@@ -8009,7 +8117,7 @@ namespace Rech
         int interval = root["interval"] == null ? 5 : (int)root["interval"];
         if (interval < 2) interval = 5;
         UserCode = code;
-        Status = "Код " + code + ". Открой twitch.tv/activate и подтверди награды.";
+        say(bot ? "Код " + code + ". Войди на Twitch аккаунтом Lucy и открой twitch.tv/activate." : "Код " + code + ". Открой twitch.tv/activate и подтверди награды.");
         try
         {
           Process.Start(new ProcessStartInfo("https://www.twitch.tv/activate") { UseShellExecute = true });
@@ -8042,6 +8150,31 @@ namespace Rech
           string access = (string)token["access_token"];
           string refresh = (string)token["refresh_token"];
           if (access == null || access.Length == 0) throw new Exception("Twitch не отдал ключ.");
+          if (bot)
+          {
+            string login = "";
+            string id = "";
+            try
+            {
+              JObject who = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users", access, clientId));
+              login = (string)who.SelectToken("data[0].login");
+              id = (string)who.SelectToken("data[0].id");
+            }
+            catch
+            {
+            }
+            lock (gate)
+            {
+              botToken = access;
+              botRefresh = refresh == null ? "" : refresh;
+              botLogin = login == null ? "" : login;
+              botUserId = id == null ? "" : id;
+            }
+            UserCode = "";
+            say(login == null || login.Length == 0 ? "Вход есть. Сделай аккаунт модератором канала." : "В чат пишет " + login + ". Сделай этот аккаунт модератором.");
+            if (BotReady != null) BotReady(access, refresh, login);
+            return;
+          }
           lock (gate)
           {
             prefs.ClientId = clientId;
@@ -8054,12 +8187,138 @@ namespace Rech
           if (TokenReady != null) TokenReady(access, refresh);
           return;
         }
-        Status = "Код истёк. Нажми вход ещё раз.";
+        say("Код истёк. Нажми вход ещё раз.");
       }
       catch (Exception ex)
       {
         UserCode = "";
-        Status = "Вход не вышел: " + (ex.Message == null ? "ошибка Twitch" : ex.Message);
+        say("Вход не вышел: " + (ex.Message == null ? "ошибка Twitch" : ex.Message));
+      }
+    }
+
+    public static bool IsOwn(string author)
+    {
+      if (author == null || botLogin == null || botLogin.Length == 0) return false;
+      return string.Equals(author.Trim(), botLogin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string PostToTwitch(string text)
+    {
+      if (text == null) return "";
+      text = Regex.Replace(text, "\\s+", " ").Trim();
+      if (text.Length == 0) return "";
+      if (text.Length > 450) text = text.Substring(0, 450).Trim();
+      string token;
+      string refresh;
+      string client;
+      string channel;
+      string sender;
+      lock (gate)
+      {
+        token = botToken;
+        refresh = botRefresh;
+        client = prefs.ClientId;
+        channel = channelName;
+        sender = botUserId;
+      }
+      if (token == null || token.Length == 0) return "В Twitch не написала: войди аккаунтом Lucy.";
+      if (channel == null || channel.Length == 0) return "В Twitch не написала: слева подключи свой канал Twitch.";
+      if (client == null || client.Length == 0) return "В Twitch не написала: нет Client ID.";
+      try
+      {
+        return SendChat(text, token, refresh, client, channel, sender, true);
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "ошибка" : ex.Message;
+        if (note.Length > 140) note = note.Substring(0, 140);
+        return "В Twitch не написала: " + note;
+      }
+    }
+
+    static string SendChat(string text, string token, string refresh, string client, string channel, string sender, bool allowRefresh)
+    {
+      if (sender == null || sender.Length == 0)
+      {
+        JObject me = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users", token, client));
+        sender = (string)me.SelectToken("data[0].id");
+        string login = (string)me.SelectToken("data[0].login");
+        lock (gate)
+        {
+          botUserId = sender == null ? "" : sender;
+          if (login != null && login.Length > 0) botLogin = login;
+        }
+      }
+      string broad = Broad(token, client, channel);
+      string body = "{\"broadcaster_id\":\"" + broad + "\",\"sender_id\":\"" + sender + "\",\"message\":" + JsonConvert.ToString(text) + "}";
+      string json;
+      try
+      {
+        json = PostAuthed("https://api.twitch.tv/helix/chat/messages", body, token, client);
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (allowRefresh && note.StartsWith("401", StringComparison.Ordinal))
+        {
+          string next = RefreshBot(client, refresh);
+          if (next.Length == 0) throw;
+          return SendChat(text, next, refresh, client, channel, sender, false);
+        }
+        throw;
+      }
+      JObject root = JObject.Parse(json);
+      JToken sent = root.SelectToken("data[0].is_sent");
+      if (sent != null && sent.Type == JTokenType.Boolean && (bool)sent)
+      {
+        BotStatus = "Написала в чат Twitch.";
+        return "";
+      }
+      string why = (string)root.SelectToken("data[0].drop_reason.message");
+      if (why == null || why.Length == 0) why = (string)root.SelectToken("data[0].drop_reason.code");
+      if (why == null) why = "не пустил";
+      if (why.IndexOf("moderat", StringComparison.OrdinalIgnoreCase) >= 0) return "Twitch не пустил. Сделай аккаунт Lucy модератором канала.";
+      return "Twitch не пустил: " + why;
+    }
+
+    static string Broad(string token, string client, string channel)
+    {
+      lock (gate)
+      {
+        if (broadLogin == channel && broadId != null && broadId.Length > 0) return broadId;
+      }
+      JObject who = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users?login=" + Uri.EscapeDataString(channel), token, client));
+      string id = (string)who.SelectToken("data[0].id");
+      if (id == null || id.Length == 0) throw new Exception("канал Twitch не найден");
+      lock (gate)
+      {
+        broadLogin = channel;
+        broadId = id;
+      }
+      return id;
+    }
+
+    static string RefreshBot(string client, string refresh)
+    {
+      if (client == null || refresh == null || refresh.Length == 0) return "";
+      try
+      {
+        string ask = "client_id=" + Uri.EscapeDataString(client) + "&refresh_token=" + Uri.EscapeDataString(refresh) + "&grant_type=refresh_token";
+        JObject token = JObject.Parse(PostForm("https://id.twitch.tv/oauth2/token", ask));
+        string access = (string)token["access_token"];
+        string next = (string)token["refresh_token"];
+        if (access == null || access.Length == 0) return "";
+        lock (gate)
+        {
+          botToken = access;
+          if (next != null && next.Length > 0) botRefresh = next;
+        }
+        if (BotReady != null) BotReady(access, next == null || next.Length == 0 ? refresh : next, botLogin);
+        return access;
+      }
+      catch
+      {
+        return "";
       }
     }
 
@@ -8452,6 +8711,23 @@ namespace Rech
     {
       HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, url);
       req.Content = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
+      return Send(req);
+    }
+
+    static string PostAuthed(string url, string body, string token, string clientId)
+    {
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, url);
+      req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+      req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+      req.Headers.TryAddWithoutValidation("Client-Id", clientId);
+      return Send(req);
+    }
+
+    static string GetAuthed(string url, string token, string clientId)
+    {
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Get, url);
+      req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+      req.Headers.TryAddWithoutValidation("Client-Id", clientId);
       return Send(req);
     }
 

@@ -266,6 +266,7 @@ namespace Rech
     public string SongReward;
     public string LucyReward;
     public int SongSeconds;
+    public int? SongVolume;
     public bool? SongYoutube;
     public bool? SongRutube;
     public bool? SongVk;
@@ -4734,6 +4735,8 @@ namespace Rech
     TextBox songRewardBox;
     TextBox lucyRewardBox;
     TextBox songSecondsBox;
+    Label songVolumeLabel;
+    TrackBar songVolumeBar;
     CheckBox songYtBox;
     CheckBox songRuBox;
     CheckBox songVkBox;
@@ -5107,6 +5110,16 @@ namespace Rech
       StyleBox(songSecondsBox);
       songSecondsBox.Text = "75";
       Place(right, songSecondsBox, 14, ref y, 28);
+      songVolumeLabel = MakeMute("Музыка 100");
+      Place(right, songVolumeLabel, 14, ref y, 18);
+      songVolumeBar = new TrackBar();
+      songVolumeBar.Minimum = 0;
+      songVolumeBar.Maximum = 100;
+      songVolumeBar.TickFrequency = 10;
+      songVolumeBar.Value = 100;
+      songVolumeBar.BackColor = Surface;
+      QuietBar(songVolumeBar);
+      Place(right, songVolumeBar, 14, ref y, 36);
       songYtBox = MakeCheck("YouTube");
       songYtBox.Checked = true;
       Place(right, songYtBox, 14, ref y, 28);
@@ -5152,7 +5165,7 @@ namespace Rech
       rateBar.BackColor = Surface;
       QuietBar(rateBar);
       Place(right, rateBar, 14, ref y, 36);
-      volumeLabel = MakeMute("Громкость 100");
+      volumeLabel = MakeMute("Голос 100");
       Place(right, volumeLabel, 14, ref y, 18);
       volumeBar = new TrackBar();
       volumeBar.Minimum = 0;
@@ -5500,7 +5513,7 @@ namespace Rech
       {
         if (loading) return;
         rateLabel.Text = "Скорость " + rateBar.Value.ToString(CultureInfo.InvariantCulture) + "%";
-        volumeLabel.Text = "Громкость " + volumeBar.Value.ToString(CultureInfo.InvariantCulture);
+        volumeLabel.Text = "Голос " + volumeBar.Value.ToString(CultureInfo.InvariantCulture);
         TopMost = topBox.Checked || capture;
         ApplyVoice();
         SaveSettings();
@@ -5537,6 +5550,11 @@ namespace Rech
       if (songRewardBox != null) songRewardBox.TextChanged += save;
       if (lucyRewardBox != null) lucyRewardBox.TextChanged += save;
       if (songSecondsBox != null) songSecondsBox.TextChanged += save;
+      if (songVolumeBar != null) songVolumeBar.Scroll += delegate
+      {
+        if (songVolumeLabel != null) songVolumeLabel.Text = "Музыка " + songVolumeBar.Value.ToString(CultureInfo.InvariantCulture);
+        save(null, EventArgs.Empty);
+      };
       if (songYtBox != null) songYtBox.CheckedChanged += save;
       if (songRuBox != null) songRuBox.CheckedChanged += save;
       if (songVkBox != null) songVkBox.CheckedChanged += save;
@@ -5670,6 +5688,11 @@ namespace Rech
       if (songRewardBox != null) songRewardBox.Text = settings.SongReward == null || settings.SongReward.Length == 0 ? "Заказать песню" : settings.SongReward;
       if (lucyRewardBox != null) lucyRewardBox.Text = settings.LucyReward == null || settings.LucyReward.Length == 0 ? "Поговорить с Люси" : settings.LucyReward;
       if (songSecondsBox != null) songSecondsBox.Text = settings.SongSeconds < 20 ? "75" : settings.SongSeconds.ToString(CultureInfo.InvariantCulture);
+      if (songVolumeBar != null)
+      {
+        songVolumeBar.Value = settings.SongVolume.HasValue ? Clamp(settings.SongVolume.Value, 0, 100) : 100;
+        if (songVolumeLabel != null) songVolumeLabel.Text = "Музыка " + songVolumeBar.Value.ToString(CultureInfo.InvariantCulture);
+      }
       if (songYtBox != null) songYtBox.Checked = settings.SongYoutube ?? true;
       if (songRuBox != null) songRuBox.Checked = settings.SongRutube ?? true;
       if (songVkBox != null) songVkBox.Checked = settings.SongVk ?? true;
@@ -5694,7 +5717,7 @@ namespace Rech
       volumeBar.Value = settings.Engine == null ? 100 : Clamp(settings.Volume, 0, 100);
       rateBar.Value = settings.Engine == null || settings.RatePercent < 80 ? 100 : Clamp(settings.RatePercent, 80, 130);
       rateLabel.Text = "Скорость " + rateBar.Value.ToString(CultureInfo.InvariantCulture) + "%";
-      volumeLabel.Text = "Громкость " + volumeBar.Value.ToString(CultureInfo.InvariantCulture);
+      volumeLabel.Text = "Голос " + volumeBar.Value.ToString(CultureInfo.InvariantCulture);
       sileroUrl.Text = settings.SileroUrl == null || settings.SileroUrl.Length == 0 ? "http://127.0.0.1:8891" : settings.SileroUrl;
       sileroOutputs.Text = settings.SileroOutputs == null ? "" : settings.SileroOutputs;
       sileroBox.SelectedIndex = SileroIndex(settings.SileroSpeaker);
@@ -6986,6 +7009,7 @@ namespace Rech
       if (seconds < 20) seconds = 20;
       if (seconds > 180) seconds = 180;
       prefs.Seconds = seconds;
+      prefs.Volume = songVolumeBar == null ? 100 : songVolumeBar.Value;
       prefs.Youtube = songYtBox == null || songYtBox.Checked;
       prefs.Rutube = songRuBox == null || songRuBox.Checked;
       prefs.Vk = songVkBox == null || songVkBox.Checked;
@@ -7167,6 +7191,7 @@ namespace Rech
       if (songSeconds < 20) songSeconds = 20;
       if (songSeconds > 180) songSeconds = 180;
       settings.SongSeconds = songSeconds;
+      settings.SongVolume = songVolumeBar == null ? 100 : songVolumeBar.Value;
       settings.SongYoutube = songYtBox == null || songYtBox.Checked;
       settings.SongRutube = songRuBox == null || songRuBox.Checked;
       settings.SongVk = songVkBox == null || songVkBox.Checked;
@@ -8711,6 +8736,7 @@ namespace Rech
     public string SongTitle;
     public string LucyTitle;
     public int Seconds;
+    public int Volume;
     public bool Youtube;
     public bool Rutube;
     public bool Vk;
@@ -9164,6 +9190,10 @@ namespace Rech
           if (left < 0) left = 0;
         }
         sb.Append(",\"left\":").Append(left.ToString(CultureInfo.InvariantCulture));
+        int volume = prefs.Volume;
+        if (volume < 0) volume = 0;
+        if (volume > 100) volume = 100;
+        sb.Append(",\"volume\":").Append(volume.ToString(CultureInfo.InvariantCulture));
         sb.Append('}');
         return sb.ToString();
       }
@@ -9810,7 +9840,7 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>var last='';var api=false;var player=null;var closing=false;function onYouTubeIframeAPIReady(){api=true;}function clearBox(){if(player&&player.destroy){try{player.destroy();}catch(e){}}player=null;var box=document.getElementById('box');if(box)box.innerHTML='';}function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}function show(j){clearBox();closing=false;var id='';var m=(j.embed||'').match(/embed\\/([^?&#]+)/);if(m)id=m[1];if(j.host==='YouTube'&&id&&api&&window.YT&&YT.Player){document.getElementById('box').innerHTML='<div id=\"yt\"></div>';player=new YT.Player('yt',{width:'100%',height:'100%',videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(100);e.target.playVideo();}catch(err){}},onError:function(){ended();},onStateChange:function(e){if(e.data!==0)return;var d=0,t=0;try{d=player.getDuration();t=player.getCurrentTime();}catch(err){}if(d>1&&t+1.5<d)return;ended();}}});return;}var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=j.embed;document.getElementById('box').appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();</script></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>var last='';var api=false;var player=null;var closing=false;var vol=100;function onYouTubeIframeAPIReady(){api=true;}function applyVol(n){vol=n;if(player&&player.setVolume){try{player.setVolume(n);if(n>0)player.unMute();}catch(e){}}}function clearBox(){if(player&&player.destroy){try{player.destroy();}catch(e){}}player=null;var box=document.getElementById('box');if(box)box.innerHTML='';}function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}function show(j){clearBox();closing=false;if(typeof j.volume==='number')vol=j.volume;var id='';var m=(j.embed||'').match(/embed\\/([^?&#]+)/);if(m)id=m[1];if(j.host==='YouTube'&&id&&api&&window.YT&&YT.Player){document.getElementById('box').innerHTML='<div id=\"yt\"></div>';player=new YT.Player('yt',{width:'100%',height:'100%',videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(vol);e.target.playVideo();}catch(err){}},onError:function(){ended();},onStateChange:function(e){if(e.data!==0)return;var d=0,t=0;try{d=player.getDuration();t=player.getCurrentTime();}catch(err){}if(d>1&&t+1.5<d)return;ended();}}});return;}var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=j.embed;document.getElementById('box').appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)

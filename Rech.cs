@@ -5460,6 +5460,7 @@ namespace Rech
       hub.Start();
       urlBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/" : "ссылка не открылась";
       if (playerBox != null) playerBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/player" : "";
+      ClipWindow.Home = playerBox == null ? "" : playerBox.Text;
       ApplyListen();
       UpdatePlaceholder();
 
@@ -9779,7 +9780,7 @@ namespace Rech
         header.Append(type);
         header.Append("\r\nContent-Length: ");
         header.Append(body.Length.ToString(CultureInfo.InvariantCulture));
-        header.Append("\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n");
+        header.Append("\r\nCache-Control: no-store\r\nReferrer-Policy: strict-origin-when-cross-origin\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n");
         byte[] head = Encoding.ASCII.GetBytes(header.ToString());
         stream.Write(head, 0, head.Length);
         stream.Write(body, 0, body.Length);
@@ -9796,7 +9797,7 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block}</style></head><body><div id=\"box\"></div><script>var last='';function clearBox(){document.getElementById('box').innerHTML='';}function show(src){var box=document.getElementById('box');box.innerHTML='';var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=src;box.appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j.embed);}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)
@@ -12419,6 +12420,7 @@ namespace Rech
   public class ClipWindow : Form
   {
     static ClipWindow open;
+    public static string Home = "";
     readonly WebView2 view;
     readonly Label note;
     string shown = "";
@@ -12462,20 +12464,12 @@ namespace Rech
       if (url == null) url = "";
       if (url.Length == 0)
       {
-        shown = "";
         Hide();
-        try
-        {
-          if (view.CoreWebView2 != null) view.CoreWebView2.Navigate("about:blank");
-        }
-        catch
-        {
-        }
         return;
       }
-      if (url == shown && Visible) return;
-      shown = url;
       if (!Visible) Show();
+      if (shown == "page" && view.CoreWebView2 != null) return;
+      shown = "page";
       note.Visible = false;
       Begin();
     }
@@ -12496,7 +12490,7 @@ namespace Rech
           view.CoreWebView2.Settings.IsStatusBarEnabled = false;
           view.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
         }
-        if (shown.Length > 0) view.CoreWebView2.Navigate(shown);
+        if (Home != null && Home.Length > 0) view.CoreWebView2.Navigate(Home);
       }
       catch (Exception ex)
       {

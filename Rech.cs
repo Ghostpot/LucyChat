@@ -9803,7 +9803,7 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>var last='';var api=false;var player=null;var closing=false;function onYouTubeIframeAPIReady(){api=true;}function clearBox(){if(player&&player.destroy){try{player.destroy();}catch(e){}}player=null;var box=document.getElementById('box');if(box)box.innerHTML='';}function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}function show(j){clearBox();closing=false;var id='';var m=(j.embed||'').match(/embed\\/([^?&#]+)/);if(m)id=m[1];if(j.host==='YouTube'&&id&&api&&window.YT&&YT.Player){document.getElementById('box').innerHTML='<div id=\"yt\"></div>';player=new YT.Player('yt',{width:'100%',height:'100%',videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(100);e.target.playVideo();}catch(err){}},onStateChange:function(e){if(e.data!==0)return;var d=0,t=0;try{d=player.getDuration();t=player.getCurrentTime();}catch(err){}if(d>1&&t+1.5<d)return;ended();}}});return;}var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=j.embed;document.getElementById('box').appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();</script></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>var last='';var api=false;var player=null;var closing=false;function onYouTubeIframeAPIReady(){api=true;}function clearBox(){if(player&&player.destroy){try{player.destroy();}catch(e){}}player=null;var box=document.getElementById('box');if(box)box.innerHTML='';}function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}function show(j){clearBox();closing=false;var id='';var m=(j.embed||'').match(/embed\\/([^?&#]+)/);if(m)id=m[1];if(j.host==='YouTube'&&id&&api&&window.YT&&YT.Player){document.getElementById('box').innerHTML='<div id=\"yt\"></div>';player=new YT.Player('yt',{width:'100%',height:'100%',videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(100);e.target.playVideo();}catch(err){}},onError:function(){ended();},onStateChange:function(e){if(e.data!==0)return;var d=0,t=0;try{d=player.getDuration();t=player.getCurrentTime();}catch(err){}if(d>1&&t+1.5<d)return;ended();}}});return;}var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=j.embed;document.getElementById('box').appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)
@@ -12458,7 +12458,12 @@ namespace Rech
       if (url == null) url = "";
       if (url.Length == 0)
       {
-        if (open != null && !open.IsDisposed) open.Apply("");
+        if (open != null && !open.IsDisposed)
+        {
+          ClipWindow dying = open;
+          open = null;
+          dying.Close();
+        }
         return;
       }
       if (open == null || open.IsDisposed) open = new ClipWindow();

@@ -9931,6 +9931,9 @@ namespace Rech
     readonly Button backButton;
     readonly Panel crowd;
     readonly Panel lookBar;
+    int placedN = -1;
+    int placedW = -1;
+    string crowdSig = "";
     readonly Button downButton;
     readonly LinkLabel siteLink;
     readonly Label sizeLabel;
@@ -9998,7 +10001,7 @@ namespace Rech
         box.SelectionStart = box.TextLength;
         box.ScrollToCaret();
       };
-      crowd = new Panel();
+      crowd = new QuietPanel();
       crowd.BackColor = lookBar.BackColor;
       crowd.Paint += new PaintEventHandler(PaintCrowd);
       LinkLabel author = new LinkLabel();
@@ -10045,6 +10048,15 @@ namespace Rech
       timer = new System.Windows.Forms.Timer();
       timer.Interval = 200;
       timer.Tick += delegate { Pump(); };
+    }
+
+    class QuietPanel : Panel
+    {
+      public QuietPanel()
+      {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+        UpdateStyles();
+      }
     }
 
     static Button Chip(string text)
@@ -10179,8 +10191,13 @@ namespace Rech
 
     void Pump()
     {
-      if (crowd != null) crowd.Invalidate();
       PlaceBar(siteLink);
+      string sig = CrowdSig();
+      if (sig != crowdSig)
+      {
+        crowdSig = sig;
+        if (crowd != null) crowd.Invalidate();
+      }
       List<OverlayLine> lines = new List<OverlayLine>();
       OverlayStyle ignored;
       hub.Snapshot(lines, out ignored);
@@ -10209,7 +10226,30 @@ namespace Rech
         box.SelectionStart = box.TextLength;
         box.ScrollToCaret();
       }
-      if (crowd != null) crowd.Invalidate();
+    }
+
+    string CrowdSig()
+    {
+      try
+      {
+        List<CrowdBit> bits = Crowd == null ? null : Crowd();
+        if (bits == null || bits.Count == 0) return "";
+        StringBuilder text = new StringBuilder();
+        int i;
+        for (i = 0; i < bits.Count; i++)
+        {
+          CrowdBit bit = bits[i];
+          text.Append(bit.Platform);
+          text.Append(bit.Live ? '1' : '0');
+          text.Append(bit.Count);
+          text.Append(';');
+        }
+        return text.ToString();
+      }
+      catch
+      {
+        return "";
+      }
     }
 
     void PlaceBar(LinkLabel author)
@@ -10228,6 +10268,9 @@ namespace Rech
       int limit = lookBar.Width - 560;
       if (limit < 64) limit = 64;
       if (crowdW > limit) crowdW = limit;
+      if (placedN == n && placedW == lookBar.Width && crowd.Width == crowdW) return;
+      placedN = n;
+      placedW = lookBar.Width;
       crowd.SetBounds(6, 4, crowdW, 32);
       int x = crowd.Right + 8;
       fontBox.SetBounds(x, 6, 116, 26);

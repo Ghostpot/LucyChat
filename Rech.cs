@@ -101,6 +101,7 @@ namespace Rech
     public long Ts;
     public bool Fresh;
     public string Icons;
+    public string UserId;
   }
 
   static class Swear
@@ -132,6 +133,12 @@ namespace Rech
       next = Lat.Replace(next, "пип");
       next = Regex.Replace(next, "(?:пип)(?:\\s+пип)+", "пип");
       return Regex.Replace(next, "\\s+", " ").Trim();
+    }
+
+    public static bool Has(string text)
+    {
+      if (text == null || text.Length == 0) return false;
+      return Rus.IsMatch(text) || Lat.IsMatch(text);
     }
 
     static string Flex(string word)
@@ -185,6 +192,229 @@ namespace Rech
       if (c == 'ю') return "[ю@*]";
       if (c == 'я') return "[я*]";
       return Regex.Escape(c.ToString());
+    }
+  }
+
+  static class Spam
+  {
+    static readonly object gate = new object();
+    static readonly Dictionary<string, List<long>> times = new Dictionary<string, List<long>>();
+    static readonly Dictionary<string, List<string>> said = new Dictionary<string, List<string>>();
+
+    public static bool Hit(string author, string text)
+    {
+      if (author == null || text == null) return false;
+      string key = author.Trim().ToLowerInvariant();
+      if (key.Length == 0) return false;
+      string norm = Regex.Replace(text.ToLowerInvariant(), "\\s+", " ").Trim();
+      long now = DateTime.UtcNow.Ticks;
+      long second = TimeSpan.TicksPerSecond;
+      lock (gate)
+      {
+        List<long> bucket;
+        if (!times.TryGetValue(key, out bucket))
+        {
+          bucket = new List<long>();
+          times[key] = bucket;
+        }
+        bucket.Add(now);
+        int i;
+        for (i = bucket.Count - 1; i >= 0; i--)
+        {
+          if (now - bucket[i] > 12 * second) bucket.RemoveAt(i);
+        }
+        if (bucket.Count >= 8) return true;
+        if (norm.Length < 12) return false;
+        List<string> lines;
+        if (!said.TryGetValue(key, out lines))
+        {
+          lines = new List<string>();
+          said[key] = lines;
+        }
+        lines.Add(now.ToString(CultureInfo.InvariantCulture) + "\n" + norm);
+        int same = 0;
+        for (i = lines.Count - 1; i >= 0; i--)
+        {
+          int cut = lines[i].IndexOf('\n');
+          long at;
+          if (cut < 1 || !long.TryParse(lines[i].Substring(0, cut), NumberStyles.Integer, CultureInfo.InvariantCulture, out at) || now - at > 90 * second)
+          {
+            lines.RemoveAt(i);
+            continue;
+          }
+          if (lines[i].Substring(cut + 1) == norm) same++;
+        }
+        return same >= 3;
+      }
+    }
+  }
+
+  public class RoomPerson
+  {
+    public string Name;
+    public int Count;
+    public int Bad;
+    public string Tone;
+    public string Last;
+  }
+
+  public class RoomFile
+  {
+    public List<string> Lines = new List<string>();
+    public List<RoomPerson> People = new List<RoomPerson>();
+  }
+
+  public static class Room
+  {
+    static readonly object gate = new object();
+    static RoomFile data;
+    static int dirty;
+
+    static string FilePath()
+    {
+      return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech", "room.json");
+    }
+
+    static void Load()
+    {
+      if (data != null) return;
+      data = new RoomFile();
+      try
+      {
+        if (File.Exists(FilePath()))
+        {
+          RoomFile read = JsonConvert.DeserializeObject<RoomFile>(File.ReadAllText(FilePath(), Encoding.UTF8));
+          if (read != null)
+          {
+            if (read.Lines != null) data.Lines = read.Lines;
+            if (read.People != null) data.People = read.People;
+          }
+        }
+      }
+      catch
+      {
+      }
+    }
+
+    static void Save()
+    {
+      try
+      {
+        Directory.CreateDirectory(Path.GetDirectoryName(FilePath()));
+        File.WriteAllText(FilePath(), JsonConvert.SerializeObject(data), new UTF8Encoding(false));
+      }
+      catch
+      {
+      }
+    }
+
+    public static void Hear(string author, string text)
+    {
+      if (author == null || text == null) return;
+      author = author.Trim();
+      text = Regex.Replace(text, "\\s+", " ").Trim();
+      if (author.Length == 0 || text.Length == 0) return;
+      if (text.Length > 140) text = text.Substring(0, 140);
+      lock (gate)
+      {
+        Load();
+        data.Lines.Add(author + ": " + text);
+        while (data.Lines.Count > 80) data.Lines.RemoveAt(0);
+        Touch(author, text, false);
+        dirty++;
+        if (dirty >= 6)
+        {
+          dirty = 0;
+          Save();
+        }
+      }
+    }
+
+    public static int Strike(string author)
+    {
+      if (author == null) return 0;
+      lock (gate)
+      {
+        Load();
+        RoomPerson person = Touch(author.Trim(), "", true);
+        dirty = 6;
+        Save();
+        return person == null ? 1 : person.Bad;
+      }
+    }
+
+    static RoomPerson Touch(string author, string text, bool bad)
+    {
+      RoomPerson person = null;
+      int i;
+      for (i = 0; i < data.People.Count; i++)
+      {
+        if (string.Equals(data.People[i].Name, author, StringComparison.OrdinalIgnoreCase))
+        {
+          person = data.People[i];
+          break;
+        }
+      }
+      if (person == null)
+      {
+        person = new RoomPerson();
+        person.Name = author;
+        person.Tone = "";
+        data.People.Add(person);
+        while (data.People.Count > 80) data.People.RemoveAt(0);
+      }
+      if (text.Length > 0)
+      {
+        person.Count++;
+        person.Last = text;
+        string low = text.ToLowerInvariant();
+        string tone = person.Tone == null ? "" : person.Tone;
+        if ((low.Contains("аха") || low.Contains("кек") || low.Contains("лол") || low.Contains("ржу") || low.Contains("ору")) && tone.IndexOf("шутит", StringComparison.Ordinal) < 0) tone = (tone + " шутит").Trim();
+        if (text.IndexOf('?') >= 0 && tone.IndexOf("спрашивает", StringComparison.Ordinal) < 0) tone = (tone + " спрашивает").Trim();
+        if ((low.Contains("книг") || low.Contains("глав")) && tone.IndexOf("про книгу", StringComparison.Ordinal) < 0) tone = (tone + " про книгу").Trim();
+        if ((low.Contains("песн") || low.Contains("музык")) && tone.IndexOf("про песни", StringComparison.Ordinal) < 0) tone = (tone + " про песни").Trim();
+        if (tone.Length > 80) tone = tone.Substring(0, 80);
+        person.Tone = tone;
+      }
+      if (bad) person.Bad++;
+      return person;
+    }
+
+    public static string Brief(string author)
+    {
+      lock (gate)
+      {
+        Load();
+        StringBuilder sb = new StringBuilder();
+        int start = data.Lines.Count - 10;
+        if (start < 0) start = 0;
+        int i;
+        for (i = start; i < data.Lines.Count; i++)
+        {
+          sb.Append(data.Lines[i]);
+          sb.Append('\n');
+        }
+        for (i = 0; i < data.People.Count; i++)
+        {
+          RoomPerson person = data.People[i];
+          if (person == null || !string.Equals(person.Name, author, StringComparison.OrdinalIgnoreCase)) continue;
+          sb.Append("Про ");
+          sb.Append(person.Name);
+          sb.Append(": сообщений ");
+          sb.Append(person.Count.ToString(CultureInfo.InvariantCulture));
+          if (person.Tone != null && person.Tone.Length > 0)
+          {
+            sb.Append(", ");
+            sb.Append(person.Tone);
+          }
+          if (person.Bad > 0) sb.Append(", уже был мут");
+          sb.Append('.');
+          break;
+        }
+        string text = sb.ToString().Trim();
+        if (text.Length > 700) text = text.Substring(text.Length - 700);
+        return text;
+      }
     }
   }
 
@@ -256,6 +486,7 @@ namespace Rech
     public bool? PauseHotkeyOn;
     public int? GamePhraseSec;
     public bool? LucyOn;
+    public bool? LucyMod;
     public string LucyFacts;
     public string TwitchClientId;
     public string TwitchToken;
@@ -775,6 +1006,7 @@ namespace Rech
             message.SourceId = source.Id;
             message.Platform = "twitch";
             message.Author = author;
+            message.UserId = parsed.Tag("user-id");
             message.Text = text;
             message.Icons = icons;
             message.Ts = Net.ToMs(parsed.Tag("tmi-sent-ts"));
@@ -2717,7 +2949,7 @@ namespace Rech
       return text;
     }
 
-    public static string Reply(string heard, string facts)
+    public static string Reply(string heard, string facts, string room)
     {
       LastNote = "";
       if (!Ready) return "";
@@ -2730,9 +2962,12 @@ namespace Rech
       string known = LucyLore.Pack(line, card);
       bool lore = LucyLore.LastHit;
       string rule = lore
-        ? "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна или две фразы. Опирайся на отрывок ниже и можешь связать его с вопросом своими словами. Не выдумывай новых имён и событий. Не представляйся. Не говори, что ты между мирами.\n"
-        : "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Ответь по тексту ниже и можешь чуть додумать, но не выдумывай факты. Не представляйся и не перечисляй миры.\n";
-      File.WriteAllText(systemPath, rule + known, new UTF8Encoding(false));
+        ? "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна или две фразы. Опирайся на отрывок и на живой чат. Подхвати шутку, если она есть. Не повторяй уже сказанное. Не выдумывай новых имён. Не представляйся.\n"
+        : "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Отвечай в тему живого чата, подхвати шутку. Не повторяй уже сказанное и не выдумывай факты.\n";
+      string talk = room == null ? "" : room.Trim();
+      if (talk.Length > 700) talk = talk.Substring(talk.Length - 700);
+      if (talk.Length > 0) talk = "Живой чат:\n" + talk + "\n";
+      File.WriteAllText(systemPath, rule + talk + known, new UTF8Encoding(false));
       File.WriteAllText(userPath, line, new UTF8Encoding(false));
       bool wantGpu = GpuReady && !gpuFailed;
       string answer = "";
@@ -4923,6 +5158,7 @@ namespace Rech
     TrackBar volumeBar;
     CheckBox ttsBox;
     CheckBox lucyBox;
+    CheckBox modBox;
     Label lucyState;
     Button lucyInstall;
     TextBox lucyFacts;
@@ -5250,6 +5486,9 @@ namespace Rech
       Place(right, sileroInstall, 14, ref y, 36);
       lucyBox = MakeCheck("Люси отвечает");
       Place(right, lucyBox, 14, ref y, 28);
+      modBox = MakeCheck("Люси модерирует: мут за запретные слова, бан за спам");
+      modBox.Checked = true;
+      Place(right, modBox, 14, ref y, 28);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
       Place(right, lucyState, 14, ref y, 58);
       lucyInstall = MakeButton("Скачать Люси", true);
@@ -5258,7 +5497,7 @@ namespace Rech
       Button lucyLogin = MakeButton("Войти как Lucy", true);
       lucyLogin.Click += delegate { Rewards.BeginBotLogin(twitchClient == null ? "" : twitchClient.Text); };
       Place(right, lucyLogin, 14, ref y, 36);
-      botState = MakeWrap("В чат Twitch ещё не входит. Нужен отдельный аккаунт Lucy и модератор на твоём канале.");
+      botState = MakeWrap("Для мута и бана войди как Lucy ещё раз. Аккаунт должен быть модератором канала.");
       Place(right, botState, 14, ref y, 48);
       Place(right, MakeMute("Что Люси знает. Можно править."), 14, ref y, 18);
       lucyFacts = new TextBox();
@@ -5731,6 +5970,7 @@ namespace Rech
         if (!loading && lucyBox.Checked && !LucyLocal.Ready) StartLucyInstall();
         save(null, EventArgs.Empty);
       };
+      if (modBox != null) modBox.CheckedChanged += save;
       swearBox.CheckedChanged += save;
       delayBox.ValueChanged += save;
       pauseKeyBox.CheckedChanged += delegate
@@ -5868,6 +6108,7 @@ namespace Rech
       if (settings.VoiceName == null && settings.Engine == null) authorBox.Checked = true;
       emoteBox.Checked = settings.Engine == null ? true : settings.SkipEmotes;
       if (lucyBox != null) lucyBox.Checked = settings.LucyOn ?? false;
+      if (modBox != null) modBox.Checked = settings.LucyMod ?? true;
       if (lucyFacts != null)
       {
         string saved = settings.LucyFacts;
@@ -6493,10 +6734,11 @@ namespace Rech
     {
       if (message == null || message.Id == null) return;
       if (seen.Contains(message.Id)) return;
-      if (IsMuted(message.Author)) return;
-      if (Rewards.Echo(message.Author, message.Text, message.Platform)) return;
       seen.Add(message.Id);
       if (seen.Count > 4000) seen.Clear();
+      if (IsMuted(message.Author)) return;
+      if (message.Fresh && Moderate(message)) return;
+      if (Rewards.Echo(message.Author, message.Text, message.Platform)) return;
       Row row = new Row();
       row.Mark = PlatformMark(message.Platform);
       row.Platform = message.Platform;
@@ -6515,8 +6757,47 @@ namespace Rech
         downButton.Visible = true;
         downButton.BringToFront();
       }
+      Room.Hear(row.Author, row.Text);
       if (message.Fresh) SpeakLater(message);
       if (message.Fresh) ConsiderLucy(message);
+    }
+
+    bool Moderate(ChatMessage message)
+    {
+      if (modBox != null && !modBox.Checked) return false;
+      if (message == null || message.Platform == "lucy") return false;
+      if (Rewards.IsOwn(message.Author)) return false;
+      string channel = FirstTwitch();
+      if (channel.Length > 0 && string.Equals(message.Author, channel, StringComparison.OrdinalIgnoreCase)) return false;
+      string text = message.Text == null ? "" : message.Text;
+      bool bad = Swear.Has(text);
+      bool spam = Spam.Hit(message.Author, text);
+      if (!bad && !spam) return false;
+      int strikes = Room.Strike(message.Author);
+      bool ban = spam || strikes >= 2;
+      RememberMute(message.Author);
+      string reason = ban ? "спам" : "запрещённые слова";
+      if (message.Platform == "twitch")
+      {
+        string nick = message.Author;
+        string userId = message.UserId;
+        int seconds = ban ? 0 : 600;
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+          Rewards.BotStatus = Rewards.Punish(nick, userId, seconds, reason);
+        });
+      }
+      if (lucyState != null) lucyState.Text = (ban ? "Бан " : "Мут 10 минут ") + message.Author + " · " + reason;
+      return true;
+    }
+
+    void RememberMute(string author)
+    {
+      if (author == null || muteBox == null) return;
+      author = author.Trim();
+      if (author.Length == 0 || IsMuted(author)) return;
+      muteBox.Text = muteBox.Text.Trim().Length == 0 ? author : muteBox.Text.Trim() + "\r\n" + author;
+      SaveSettings();
     }
 
     void ConsiderLucy(ChatMessage message)
@@ -6540,7 +6821,7 @@ namespace Rech
         string answer = "";
         try
         {
-          answer = LucyLocal.Reply(author + ": " + heard, facts);
+          answer = LucyLocal.Reply(author + ": " + heard, facts, Room.Brief(author));
           if (answer != null && answer.Length > 0) LucyLore.Remember(author + ": " + heard, answer);
         }
         catch (Exception ex)
@@ -7417,6 +7698,7 @@ namespace Rech
       settings.SileroSpeaker = SileroSpeaker(sileroBox.SelectedIndex < 0 ? 0 : sileroBox.SelectedIndex);
       settings.SkipEmotes = emoteBox.Checked;
       settings.LucyOn = lucyBox != null && lucyBox.Checked;
+      settings.LucyMod = modBox == null || modBox.Checked;
       settings.LucyFacts = lucyFacts == null ? LucyLocal.Card : lucyFacts.Text;
       settings.TwitchClientId = twitchClient == null ? "" : twitchClient.Text.Trim();
       settings.TwitchToken = twitchToken == null ? "" : twitchToken;
@@ -9089,7 +9371,7 @@ namespace Rech
       {
         say("Прошу код у Twitch…");
         UserCode = "";
-        string scopes = bot ? "user:write:chat" : "channel:read:redemptions channel:manage:redemptions";
+        string scopes = bot ? "user:write:chat moderator:manage:banned_users" : "channel:read:redemptions channel:manage:redemptions";
         string body = "client_id=" + Uri.EscapeDataString(clientId) + "&scopes=" + Uri.EscapeDataString(scopes);
         string json = PostForm("https://id.twitch.tv/oauth2/device", body);
         JObject root = JObject.Parse(json);
@@ -9240,6 +9522,63 @@ namespace Rech
         string note = ex.Message == null ? "ошибка" : ex.Message;
         if (note.Length > 140) note = note.Substring(0, 140);
         return "В Twitch не написала: " + note;
+      }
+    }
+
+    public static string Punish(string login, string userId, int seconds, string reason)
+    {
+      return PunishTry(login, userId, seconds, reason, true);
+    }
+
+    static string PunishTry(string login, string userId, int seconds, string reason, bool allowRefresh)
+    {
+      login = login == null ? "" : login.Trim();
+      if (login.Length == 0) return "Мут не поставлен: нет ника.";
+      string token;
+      string refresh;
+      string client;
+      string channel;
+      string sender;
+      lock (gate)
+      {
+        token = botToken;
+        refresh = botRefresh;
+        client = prefs.ClientId;
+        channel = channelName;
+        sender = botUserId;
+      }
+      if (token == null || token.Length == 0) return "Мут не поставлен: войди аккаунтом Lucy.";
+      if (channel == null || channel.Length == 0) return "Мут не поставлен: нет канала Twitch.";
+      if (client == null || client.Length == 0) return "Мут не поставлен: нет Client ID.";
+      try
+      {
+        if (sender == null || sender.Length == 0)
+        {
+          JObject me = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users", token, client));
+          sender = (string)me.SelectToken("data[0].id");
+          lock (gate) { botUserId = sender == null ? "" : sender; }
+        }
+        if (userId == null || userId.Length == 0)
+        {
+          JObject who = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users?login=" + Uri.EscapeDataString(login.ToLowerInvariant()), token, client));
+          userId = (string)who.SelectToken("data[0].id");
+        }
+        if (userId == null || userId.Length == 0) return "Мут не поставлен: не нашла " + login + ".";
+        string broad = Broad(token, client, channel);
+        string url = "https://api.twitch.tv/helix/moderation/bans?broadcaster_id=" + Uri.EscapeDataString(broad) + "&moderator_id=" + Uri.EscapeDataString(sender);
+        string body = seconds > 0
+          ? "{\"data\":{\"user_id\":" + JsonConvert.ToString(userId) + ",\"duration\":" + seconds.ToString(CultureInfo.InvariantCulture) + ",\"reason\":" + JsonConvert.ToString(reason) + "}}"
+          : "{\"data\":{\"user_id\":" + JsonConvert.ToString(userId) + ",\"reason\":" + JsonConvert.ToString(reason) + "}}";
+        PostAuthed(url, body, token, client);
+        return seconds > 0 ? "Мут " + login + " на 10 минут." : "Бан " + login + ".";
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "ошибка" : ex.Message;
+        if (allowRefresh && note.StartsWith("401", StringComparison.Ordinal) && refresh != null && refresh.Length > 0 && RefreshBot(client, refresh).Length > 0) return PunishTry(login, userId, seconds, reason, false);
+        if (note.IndexOf("403", StringComparison.Ordinal) >= 0) return "Lucy не модератор, мут не поставлен.";
+        if (note.Length > 120) note = note.Substring(0, 120);
+        return "Мут не поставлен: " + note;
       }
     }
 
@@ -9668,7 +10007,7 @@ namespace Rech
           string answer = "";
           try
           {
-            answer = LucyLocal.Reply(user + ": " + input, facts);
+            answer = LucyLocal.Reply(user + ": " + input, facts, Room.Brief(user));
             if (answer != null && answer.Length > 0) LucyLore.Remember(user + ": " + input, answer);
           }
           catch

@@ -5134,7 +5134,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("Клип открывается окном «ЛюсиЧат — клип» и сам гаснет. В OBS: источник «Захват окна», это окно. Старый «Браузер» убери, он даёт чёрный прямоугольник. Звук идёт в колонки."), 14, ref y, 72);
+      Place(right, MakeMute("Окно «ЛюсиЧат — клип» садится в угол, не по центру. В OBS добавь источник «Захват окна» и поставь его куда нужно на сцене. Старый «Браузер» убери."), 14, ref y, 64);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -12442,10 +12442,38 @@ namespace Rech
     {
       Text = "ЛюсиЧат — клип";
       FormBorderStyle = FormBorderStyle.None;
-      StartPosition = FormStartPosition.CenterScreen;
+      StartPosition = FormStartPosition.Manual;
       ClientSize = new Size(960, 540);
       BackColor = Color.Black;
       ShowInTaskbar = true;
+      Rectangle area = Screen.PrimaryScreen.WorkingArea;
+      Location = new Point(Math.Max(area.Left, area.Right - 976), Math.Max(area.Top, area.Bottom - 556));
+      try
+      {
+        string spot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech", "clip-spot.txt");
+        if (File.Exists(spot))
+        {
+          string[] parts = File.ReadAllText(spot).Split(',');
+          int x = int.Parse(parts[0], CultureInfo.InvariantCulture);
+          int y = int.Parse(parts[1], CultureInfo.InvariantCulture);
+          Location = new Point(x, y);
+        }
+      }
+      catch
+      {
+      }
+      Move += delegate
+      {
+        try
+        {
+          string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech");
+          Directory.CreateDirectory(dir);
+          File.WriteAllText(Path.Combine(dir, "clip-spot.txt"), Location.X.ToString(CultureInfo.InvariantCulture) + "," + Location.Y.ToString(CultureInfo.InvariantCulture));
+        }
+        catch
+        {
+        }
+      };
       view = new WebView2();
       view.Dock = DockStyle.Fill;
       view.DefaultBackgroundColor = Color.Black;
@@ -12457,6 +12485,11 @@ namespace Rech
       note.Visible = false;
       Controls.Add(view);
       Controls.Add(note);
+    }
+
+    protected override bool ShowWithoutActivation
+    {
+      get { return true; }
     }
 
     void Apply(string url)

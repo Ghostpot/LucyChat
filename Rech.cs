@@ -5134,7 +5134,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("Окно «ЛюсиЧат — клип» садится в угол, не по центру. В OBS добавь источник «Захват окна» и поставь его куда нужно на сцене. Старый «Браузер» убери."), 14, ref y, 64);
+      Place(right, MakeMute("Клип на экран не вылезает. В OBS один раз: источник «Захват окна», окно «ЛюсиЧат — клип», метод «Windows 10». Поставь его на сцену куда нужно. Звук идёт в колонки, зрители слышат его со стрима."), 14, ref y, 72);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -9917,6 +9917,8 @@ namespace Rech
     readonly Button nickButton;
     readonly Button backButton;
     readonly Panel crowd;
+    readonly Panel lookBar;
+    readonly Button downButton;
     readonly Label sizeLabel;
     readonly System.Windows.Forms.Timer timer;
     int seen = -1;
@@ -9953,47 +9955,37 @@ namespace Rech
       box.ScrollBars = RichTextBoxScrollBars.Vertical;
       box.Font = new Font("Segoe UI", 18f, FontStyle.Regular, GraphicsUnit.Pixel);
       barFont = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
-      Panel bar = new Panel();
-      bar.Dock = DockStyle.Bottom;
-      bar.Height = 112;
-      bar.BackColor = Color.FromArgb(22, 17, 14);
+      lookBar = new Panel();
+      lookBar.Dock = DockStyle.Bottom;
+      lookBar.Height = 40;
+      lookBar.BackColor = Color.FromArgb(22, 17, 14);
       fontBox = new ComboBox();
       fontBox.DropDownStyle = ComboBoxStyle.DropDownList;
       fontBox.Font = barFont;
       fontBox.BackColor = Color.FromArgb(36, 25, 16);
       fontBox.ForeColor = Color.FromArgb(246, 239, 228);
       fontBox.Items.AddRange(new object[] { "Segoe UI", "Arial", "Verdana", "Tahoma", "Georgia", "Consolas", "Times New Roman" });
-      fontBox.SetBounds(8, 8, 150, 28);
       sizeLabel = new Label();
       sizeLabel.Font = barFont;
       sizeLabel.ForeColor = Color.FromArgb(231, 196, 138);
       sizeLabel.Text = "18";
       sizeLabel.TextAlign = ContentAlignment.MiddleRight;
-      sizeLabel.SetBounds(160, 10, 28, 22);
       sizeBar = new TrackBar();
       sizeBar.Minimum = 12;
       sizeBar.Maximum = 36;
       sizeBar.TickFrequency = 4;
-      sizeBar.SetBounds(188, 6, 110, 32);
-      sizeBar.BackColor = bar.BackColor;
+      sizeBar.BackColor = lookBar.BackColor;
       textButton = Chip("Текст");
-      textButton.SetBounds(304, 8, 64, 28);
       nickButton = Chip("Ник");
-      nickButton.SetBounds(372, 8, 56, 28);
       backButton = Chip("Фон");
-      backButton.SetBounds(432, 8, 56, 28);
-      Button down = Chip("Вниз");
-      down.SetBounds(492, 8, 64, 28);
-      down.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-      down.Click += delegate
+      downButton = Chip("Вниз");
+      downButton.Click += delegate
       {
         box.SelectionStart = box.TextLength;
         box.ScrollToCaret();
       };
       crowd = new Panel();
-      crowd.SetBounds(8, 46, 520, 58);
-      crowd.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-      crowd.BackColor = bar.BackColor;
+      crowd.BackColor = lookBar.BackColor;
       crowd.Paint += new PaintEventHandler(PaintCrowd);
       LinkLabel author = new LinkLabel();
       author.Text = "ghostpot.ru";
@@ -10003,8 +9995,6 @@ namespace Rech
       author.VisitedLinkColor = Color.FromArgb(231, 196, 138);
       author.LinkBehavior = LinkBehavior.HoverUnderline;
       author.AutoSize = true;
-      author.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      author.Location = new Point(560, 78);
       author.Cursor = Cursors.Hand;
       author.LinkClicked += delegate
       {
@@ -10016,22 +10006,18 @@ namespace Rech
         {
         }
       };
-      bar.Resize += delegate
-      {
-        author.Left = Math.Max(8, bar.Width - author.Width - 12);
-        crowd.Width = Math.Max(80, author.Left - 16);
-      };
-      bar.Controls.Add(fontBox);
-      bar.Controls.Add(sizeLabel);
-      bar.Controls.Add(sizeBar);
-      bar.Controls.Add(textButton);
-      bar.Controls.Add(nickButton);
-      bar.Controls.Add(backButton);
-      bar.Controls.Add(down);
-      bar.Controls.Add(author);
-      bar.Controls.Add(crowd);
+      lookBar.Resize += delegate { PlaceBar(author); };
+      lookBar.Controls.Add(fontBox);
+      lookBar.Controls.Add(sizeLabel);
+      lookBar.Controls.Add(sizeBar);
+      lookBar.Controls.Add(textButton);
+      lookBar.Controls.Add(nickButton);
+      lookBar.Controls.Add(backButton);
+      lookBar.Controls.Add(downButton);
+      lookBar.Controls.Add(author);
+      lookBar.Controls.Add(crowd);
       Controls.Add(box);
-      Controls.Add(bar);
+      Controls.Add(lookBar);
       fontBox.SelectedIndexChanged += delegate { if (!filling) CommitLook(); };
       sizeBar.Scroll += delegate
       {
@@ -10178,6 +10164,7 @@ namespace Rech
 
     void Pump()
     {
+      if (crowd != null) crowd.Invalidate();
       List<OverlayLine> lines = new List<OverlayLine>();
       OverlayStyle ignored;
       hub.Snapshot(lines, out ignored);
@@ -10209,6 +10196,36 @@ namespace Rech
       if (crowd != null) crowd.Invalidate();
     }
 
+    void PlaceBar(LinkLabel author)
+    {
+      if (lookBar == null) return;
+      int n = 1;
+      try
+      {
+        List<CrowdBit> bits = Crowd == null ? null : Crowd();
+        if (bits != null && bits.Count > 0) n = bits.Count;
+      }
+      catch
+      {
+      }
+      int crowdW = 8 + n * 56;
+      if (crowdW > lookBar.Width / 2) crowdW = Math.Max(80, lookBar.Width / 2);
+      crowd.SetBounds(6, 4, crowdW, 32);
+      int x = crowd.Right + 8;
+      fontBox.SetBounds(x, 6, 116, 26);
+      sizeLabel.SetBounds(x + 118, 8, 28, 22);
+      sizeBar.SetBounds(x + 146, 2, 88, 34);
+      textButton.SetBounds(x + 238, 6, 58, 26);
+      nickButton.SetBounds(x + 300, 6, 48, 26);
+      backButton.SetBounds(x + 352, 6, 48, 26);
+      downButton.SetBounds(x + 404, 6, 56, 26);
+      if (author != null)
+      {
+        author.Location = new Point(Math.Max(downButton.Right + 8, lookBar.Width - author.Width - 8), 10);
+        author.Visible = author.Left > downButton.Right;
+      }
+    }
+
     void PaintCrowd(object sender, PaintEventArgs e)
     {
       List<CrowdBit> bits = Crowd == null ? null : Crowd();
@@ -10217,7 +10234,7 @@ namespace Rech
       Font font = barFont == null ? Font : barFont;
       if (bits == null || bits.Count == 0)
       {
-        TextRenderer.DrawText(g, "Каналы не подключены", font, new Rectangle(0, 16, crowd.Width, 22), Color.FromArgb(183, 170, 154), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+        TextRenderer.DrawText(g, "нет каналов", font, new Rectangle(0, 4, crowd.Width, 24), Color.FromArgb(183, 170, 154), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
         return;
       }
       int x = 0;
@@ -10227,24 +10244,23 @@ namespace Rech
       for (i = 0; i < bits.Count; i++)
       {
         CrowdBit bit = bits[i];
-        if (x > crowd.Width - 70) break;
-        Rectangle badge = new Rectangle(x, 16, 24, 24);
+        if (x > crowd.Width - 52) break;
+        Rectangle badge = new Rectangle(x, 5, 20, 20);
         using (SolidBrush brush = new SolidBrush(MainForm.BadgeInk(bit.Platform))) g.FillEllipse(brush, badge);
         string mark = MainForm.PlatformMark(bit.Platform);
         if (mark.Length > 2) mark = mark.Substring(0, 2);
         TextRenderer.DrawText(g, mark, font, badge, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         string count = bit.Count < 0 ? "—" : bit.Count.ToString(CultureInfo.InvariantCulture);
         Color ink = bit.Live ? Color.FromArgb(120, 210, 140) : Color.FromArgb(183, 170, 154);
-        TextRenderer.DrawText(g, count, font, new Rectangle(x + 28, 16, 48, 24), ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(g, count, font, new Rectangle(x + 22, 4, 30, 22), ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         if (bit.Live && bit.Count > 0)
         {
           total += bit.Count;
           known++;
         }
-        x += 84;
+        x += 56;
       }
-      string sum = known == 0 ? "" : "всего " + total.ToString(CultureInfo.InvariantCulture);
-      if (sum.Length > 0) TextRenderer.DrawText(g, sum, font, new Rectangle(0, 0, crowd.Width, 16), Color.FromArgb(231, 196, 138), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+      if (known > 0 && x + 54 < crowd.Width) TextRenderer.DrawText(g, total.ToString(CultureInfo.InvariantCulture), font, new Rectangle(x, 4, 48, 22), Color.FromArgb(231, 196, 138), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
     }
 
     void Append(OverlayLine line)
@@ -12443,37 +12459,11 @@ namespace Rech
       Text = "ЛюсиЧат — клип";
       FormBorderStyle = FormBorderStyle.None;
       StartPosition = FormStartPosition.Manual;
+      ShowInTaskbar = false;
       ClientSize = new Size(960, 540);
       BackColor = Color.Black;
-      ShowInTaskbar = true;
-      Rectangle area = Screen.PrimaryScreen.WorkingArea;
-      Location = new Point(Math.Max(area.Left, area.Right - 976), Math.Max(area.Top, area.Bottom - 556));
-      try
-      {
-        string spot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech", "clip-spot.txt");
-        if (File.Exists(spot))
-        {
-          string[] parts = File.ReadAllText(spot).Split(',');
-          int x = int.Parse(parts[0], CultureInfo.InvariantCulture);
-          int y = int.Parse(parts[1], CultureInfo.InvariantCulture);
-          Location = new Point(x, y);
-        }
-      }
-      catch
-      {
-      }
-      Move += delegate
-      {
-        try
-        {
-          string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech");
-          Directory.CreateDirectory(dir);
-          File.WriteAllText(Path.Combine(dir, "clip-spot.txt"), Location.X.ToString(CultureInfo.InvariantCulture) + "," + Location.Y.ToString(CultureInfo.InvariantCulture));
-        }
-        catch
-        {
-        }
-      };
+      Rectangle all = SystemInformation.VirtualScreen;
+      Location = new Point(all.X - Width - 80, all.Y + 20);
       view = new WebView2();
       view.Dock = DockStyle.Fill;
       view.DefaultBackgroundColor = Color.Black;
@@ -12492,6 +12482,15 @@ namespace Rech
       get { return true; }
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    void Park()
+    {
+      if (!IsHandleCreated) return;
+      SetWindowPos(Handle, new IntPtr(1), -3200, 80, 960, 540, 0x0010);
+    }
+
     void Apply(string url)
     {
       if (url == null) url = "";
@@ -12501,6 +12500,7 @@ namespace Rech
         return;
       }
       if (!Visible) Show();
+      Park();
       if (shown == "page" && view.CoreWebView2 != null) return;
       shown = "page";
       note.Visible = false;

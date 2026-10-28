@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <StartupObject>Rech.App</StartupObject>
+    <AssemblyName>RECH</AssemblyName>
+    <RootNamespace>Rech</RootNamespace>
+    <ApplicationTitle>ЛюсиЧат</ApplicationTitle>
+    <Product>ЛюсиЧат</Product>
+    <Company>Ghostpot</Company>
+    <Copyright>Ghostpot — https://ghostpot.ru</Copyright>
+    <Description>Люси читает чат эфира</Description>
+    <Version>1.3.0</Version>
+    <ApplicationIcon>lucy.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="lucy.png">
+      <LogicalName>Rech.lucy.png</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="bin/**" />
+    <Compile Remove="obj/**" />
+    <None Remove="**/*.ps1" />
+    <None Remove="**/*.vbs" />
+    <None Remove="**/*.bat" />
+    <None Remove="**/*.txt" />
+  </ItemGroup>
+</Project>

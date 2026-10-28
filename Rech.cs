@@ -2543,7 +2543,7 @@ namespace Rech
       }
       try
       {
-        if (GpuReady) return;
+        if (GpuReady) return true;
         string dir = CudaDir();
         Directory.CreateDirectory(dir);
         string drive = Path.GetPathRoot(dir);

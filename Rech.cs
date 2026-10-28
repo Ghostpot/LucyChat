@@ -5118,7 +5118,15 @@ namespace Rech
       Button skipSong = MakeButton("Пропустить песню", false);
       skipSong.Click += delegate { Rewards.Skip(); };
       Place(right, skipSong, 14, ref y, 36);
-      Place(right, MakeMute("Плеер для OBS, источник «Браузер», примерно 480×270"), 14, ref y, 18);
+      Button hideSong = MakeButton("Скрыть плеер", false);
+      hideSong.Click += delegate
+      {
+        bool on = !Rewards.Concealed;
+        Rewards.Conceal(on);
+        hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
+      };
+      Place(right, hideSong, 14, ref y, 36);
+      Place(right, MakeMute("В OBS только сам клип. Пока тишина, подложки нет. «Скрыть плеер» убирает картинку и глушит звук."), 14, ref y, 48);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -8735,6 +8743,7 @@ namespace Rech
     static string broadId = "";
     static string lastLine = "";
     static DateTime lastAt;
+    static bool concealed;
 
     public static void Apply(RewardPrefs next)
     {
@@ -9040,6 +9049,21 @@ namespace Rech
       }
     }
 
+    public static void Conceal(bool on)
+    {
+      lock (gate)
+      {
+        concealed = on;
+        if (on) now = null;
+        else if (now == null) NextLocked();
+      }
+    }
+
+    public static bool Concealed
+    {
+      get { lock (gate) { return concealed; } }
+    }
+
     public static void Skip()
     {
       lock (gate)
@@ -9054,6 +9078,7 @@ namespace Rech
     {
       lock (gate)
       {
+        if (concealed) return;
         if (now != null && DateTime.UtcNow >= until)
         {
           now = null;
@@ -9066,6 +9091,7 @@ namespace Rech
     {
       lock (gate)
       {
+        if (concealed) return "Плеер скрыт, клип не играет.";
         if (now == null)
         {
           if (queue.Count == 0) return "Сейчас тишина.";
@@ -9082,10 +9108,12 @@ namespace Rech
       lock (gate)
       {
         StringBuilder sb = new StringBuilder();
-        sb.Append("{\"id\":").Append(JsonConvert.ToString(now == null ? "" : now.Id));
-        sb.Append(",\"embed\":").Append(JsonConvert.ToString(now == null ? "" : now.Embed));
-        sb.Append(",\"by\":").Append(JsonConvert.ToString(now == null ? "" : now.By));
-        sb.Append(",\"host\":").Append(JsonConvert.ToString(now == null ? "" : now.Host));
+        bool quiet = concealed || now == null;
+        sb.Append("{\"id\":").Append(JsonConvert.ToString(quiet ? "" : now.Id));
+        sb.Append(",\"embed\":").Append(JsonConvert.ToString(quiet ? "" : now.Embed));
+        sb.Append(",\"by\":").Append(JsonConvert.ToString(quiet ? "" : now.By));
+        sb.Append(",\"host\":").Append(JsonConvert.ToString(quiet ? "" : now.Host));
+        sb.Append(",\"hide\":").Append(concealed ? "true" : "false");
         int left = 0;
         if (now != null)
         {
@@ -9285,6 +9313,7 @@ namespace Rech
             item.By = user;
             item.Host = host;
             queue.Add(item);
+            concealed = false;
             if (now == null) NextLocked();
           }
         }
@@ -9725,7 +9754,7 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:#120c09;color:#f4efe6;font:16px Segoe UI,sans-serif}header{display:flex;justify-content:space-between;padding:8px 12px}b{color:#ff8a3d}iframe{width:100vw;height:calc(100vh - 36px);border:0;background:#000}.quiet{display:grid;place-items:center;height:calc(100vh - 36px);color:#a89880}</style></head><body><header><span>Люси ставит</span><b id=\"who\">тишина</b></header><div id=\"box\" class=\"quiet\">Ждём песню</div><script>var last='';async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();document.getElementById('who').textContent=j.by?j.by+' · '+j.host+' · '+j.left+' с':'тишина';if(j.id!==last){last=j.id||'';var box=document.getElementById('box');if(!j.embed){box.className='quiet';box.textContent='Ждём песню';}else{box.className='';box.innerHTML='<iframe allow=\"autoplay; encrypted-media\" src=\"'+j.embed.replace(/\"/g,'')+'\"></iframe>';}}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent;overflow:hidden}iframe{width:100vw;height:100vh;border:0;background:transparent}</style></head><body><div id=\"box\"></div><script>var last='';var hidden=false;async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();var box=document.getElementById('box');if(!j.embed){if(last!==''||hidden){box.innerHTML='';}last='';hidden=!!j.hide;return;}if(hidden||j.id!==last){hidden=false;last=j.id||'';box.innerHTML='<iframe allow=\"autoplay; encrypted-media\" src=\"'+j.embed.replace(/\"/g,'')+'\"></iframe>';}}catch(e){}}setInterval(tick,1000);tick();</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)

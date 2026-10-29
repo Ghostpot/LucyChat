@@ -487,6 +487,10 @@ namespace Rech
     public int? GamePhraseSec;
     public bool? LucyOn;
     public bool? LucyMod;
+    public bool? LucyFace;
+    public int? LucyWait;
+    public string FaceWorld;
+    public List<FaceSet> Faces;
     public string LucyFacts;
     public string TwitchClientId;
     public string TwitchToken;
@@ -2866,24 +2870,38 @@ namespace Rech
       if (answer == null) return "";
       string low = answer.ToLowerInvariant();
       bool mess = low.Contains("рыс") || low.Contains("я книга") || low.Contains("просто книга") || low.Contains("книга из");
+      string result;
       if (lore)
       {
         if (mess || LucyLore.Slogan(answer))
         {
           string told = LucyLocal.Keep(LucyLore.LastPassage, 2);
-          if (told.Length > 0) return told;
+          result = told.Length > 0 ? told : answer;
         }
-        return answer;
+        else result = answer;
       }
-      if (LucyLore.Slogan(answer)) return OneSentence(section);
-      int worlds = 0;
-      if (low.Contains("азерот")) worlds++;
-      if (low.Contains("готик")) worlds++;
-      if (low.Contains("zomboid") || low.Contains("зомбоид")) worlds++;
-      if (low.Contains("книг")) worlds++;
-      if (low.Contains("песн") || low.Contains("музык")) worlds++;
-      if (mess || worlds >= 2) return OneSentence(section);
-      return answer;
+      else if (LucyLore.Slogan(answer)) result = OneSentence(section);
+      else
+      {
+        int worlds = 0;
+        if (low.Contains("азерот")) worlds++;
+        if (low.Contains("готик")) worlds++;
+        if (low.Contains("zomboid") || low.Contains("зомбоид")) worlds++;
+        if (low.Contains("книг")) worlds++;
+        if (low.Contains("песн") || low.Contains("музык")) worlds++;
+        result = mess || worlds >= 2 ? OneSentence(section) : answer;
+      }
+      return Polish(result);
+    }
+
+    public static string Polish(string answer)
+    {
+      if (answer == null) return "";
+      string text = answer.Trim();
+      text = Regex.Replace(text, "(?i)^(?:люси|lucy)\\s*[:\\-—–]\\s*", "");
+      text = Regex.Replace(text, "(?i)хотя бы для славы в истории[!?.…]*", " ");
+      text = Regex.Replace(text, "\\s+", " ").Trim().Trim(' ', ':', '-', '—');
+      return text;
     }
 
     public static string OneSentence(string text)
@@ -2959,11 +2977,12 @@ namespace Rech
       string line = heard == null ? "" : heard.Replace("\r", " ").Replace("\n", " ").Trim();
       if (line.Length > 180) line = line.Substring(0, 180);
       string card = Slice(facts, line);
-      string known = LucyLore.Pack(line, card);
+      string known = LucyLore.Pack(line, card, LucyStage.World);
       bool lore = LucyLore.LastHit;
+      string here = LucyStage.World == null || LucyStage.World.Length == 0 ? "Азерот" : LucyStage.World;
       string rule = lore
-        ? "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна или две фразы. Опирайся на отрывок и на живой чат. Подхвати шутку, если она есть. Не повторяй уже сказанное. Не выдумывай новых имён. Не представляйся.\n"
-        : "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Отвечай в тему живого чата, подхвати шутку. Не повторяй уже сказанное и не выдумывай факты.\n";
+        ? "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна или две фразы. Сейчас эфир в мире " + here + ". Если вопрос про него, отвечай про него. Если прямо спросили про другой мир, ответь про тот. Не пиши своё имя и двоеточие в начале. Никогда не говори «хотя бы для славы в истории». Не повторяй уже сказанное.\n"
+        : "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Сейчас эфир в мире " + here + ". Отвечай про него, а про другой мир только если спросили. Не пиши своё имя в начале. Никогда не говори «хотя бы для славы в истории». Не повторяй уже сказанное.\n";
       string talk = room == null ? "" : room.Trim();
       if (talk.Length > 700) talk = talk.Substring(talk.Length - 700);
       if (talk.Length > 0) talk = "Живой чат:\n" + talk + "\n";
@@ -3097,10 +3116,19 @@ namespace Rech
     }
   }
 
+  public class FaceSet
+  {
+    public string Name;
+    public string Talk;
+    public string Joke;
+    public string Mad;
+  }
+
   public class LorePiece
   {
     public string Title;
     public string Body;
+    public string World;
   }
 
   public class LoreFile
@@ -3110,12 +3138,91 @@ namespace Rech
     public List<string> Talk = new List<string>();
   }
 
+  public static class LucyStage
+  {
+    public static bool On;
+    public static int Wait;
+    public static string World = "Азерот";
+    public static string Talk = "";
+    public static string Joke = "";
+    public static string Mad = "";
+    public static string File = "";
+    public static int Token;
+    public static long Until;
+    static byte[] bytes;
+    static string loaded;
+
+    public static string[] Names()
+    {
+      return new string[] { "Азерот", "Зомбоид", World == null ? "" : World };
+    }
+
+    public static void Show(string answer)
+    {
+      if (!On || answer == null || answer.Length == 0)
+      {
+        File = "";
+        return;
+      }
+      string low = answer.ToLowerInvariant();
+      string path = Talk;
+      if (low.Contains("дура") || low.Contains("затк") || low.Contains("беси") || low.Contains("злю") || low.Contains("хватит") || low.Contains("нагл")) path = Mad;
+      else if (low.Contains("аха") || low.Contains("хах") || low.Contains("хех") || low.Contains("смеш") || low.Contains("шут")) path = Joke;
+      path = Resolve(path);
+      if (path.Length == 0) path = Resolve(Talk);
+      if (path.Length == 0)
+      {
+        File = "";
+        return;
+      }
+      File = path;
+      Token = Token + 1;
+      Until = OverlayHub.NowMs() + 8000;
+    }
+
+    public static int FaceToken()
+    {
+      if (!On || File == null || File.Length == 0) return 0;
+      if (Until < OverlayHub.NowMs()) return 0;
+      return Token;
+    }
+
+    public static byte[] Bytes()
+    {
+      if (File == null || File.Length == 0 || !System.IO.File.Exists(File)) return null;
+      if (loaded == File && bytes != null) return bytes;
+      try
+      {
+        bytes = System.IO.File.ReadAllBytes(File);
+        loaded = File;
+        return bytes;
+      }
+      catch
+      {
+        return null;
+      }
+    }
+
+    public static string Resolve(string path)
+    {
+      if (path == null || path.Length == 0) return "";
+      if (System.IO.File.Exists(path)) return path;
+      string exe = Environment.ProcessPath;
+      string dir = exe == null ? "" : Path.GetDirectoryName(exe);
+      if (dir == null || dir.Length == 0) return "";
+      string beside = Path.Combine(dir, "faces", path.Replace('/', Path.DirectorySeparatorChar));
+      if (System.IO.File.Exists(beside)) return beside;
+      return "";
+    }
+  }
+
   public class LucyLore
   {
     static readonly object gate = new object();
     static LoreFile data;
     static List<string> titles = new List<string>();
     static List<string> chunks = new List<string>();
+    static List<string> chunkWorld = new List<string>();
     static List<string> sticky = new List<string>();
     public static string LastPassage = "";
     public static bool LastHit;
@@ -3158,18 +3265,21 @@ namespace Rech
     {
       titles = new List<string>();
       chunks = new List<string>();
+      chunkWorld = new List<string>();
       int i;
       for (i = 0; i < data.Pieces.Count; i++)
       {
         LorePiece piece = data.Pieces[i];
         if (piece == null || piece.Body == null) continue;
         string title = piece.Title == null || piece.Title.Trim().Length == 0 ? "Заметка" : piece.Title.Trim();
+        string world = piece.World == null ? "" : piece.World.Trim();
         List<string> parts = Split(piece.Body);
         int k;
         int count = 0;
         for (k = 0; k < parts.Count; k++)
         {
           chunks.Add(parts[k]);
+          chunkWorld.Add(world);
           count++;
         }
         titles.Add(title + "  ·  " + count.ToString(CultureInfo.InvariantCulture) + " кусков");
@@ -3226,6 +3336,7 @@ namespace Rech
         LorePiece piece = new LorePiece();
         piece.Title = title == null || title.Trim().Length == 0 ? "Заметка" : title.Trim();
         piece.Body = body;
+        piece.World = LucyStage.World == null ? "" : LucyStage.World;
         data.Pieces.Add(piece);
         Rebuild();
       }
@@ -3282,13 +3393,13 @@ namespace Rech
       Save();
     }
 
-    public static string Pack(string heard, string card)
+    public static string Pack(string heard, string card, string world)
     {
       Load();
       LastHit = false;
       LastPassage = "";
       bool meta = Meta(heard);
-      List<string> found = meta ? new List<string>() : Take(heard);
+      List<string> found = meta ? new List<string>() : Take(heard, world);
       string memory = Recent(heard);
       if (Slogan(memory)) memory = "";
       StringBuilder sb = new StringBuilder();
@@ -3339,9 +3450,9 @@ namespace Rech
       return false;
     }
 
-    static List<string> Take(string heard)
+    static List<string> Take(string heard, string world)
     {
-      List<string> found = Search(heard, 2);
+      List<string> found = Search(heard, 2, world);
       if (found.Count == 0 && Follow(heard)) return new List<string>(sticky);
       if (found.Count > 0) sticky = new List<string>(found);
       return found;
@@ -3377,7 +3488,7 @@ namespace Rech
       int bestScore = 1;
       for (i = 0; i < start; i++)
       {
-        int score = Score(heard, talk[i]);
+        int score = Score(heard, talk[i], "", "", "");
         if (score > bestScore)
         {
           bestScore = score;
@@ -3394,12 +3505,18 @@ namespace Rech
       return text;
     }
 
-    static List<string> Search(string heard, int take)
+    static List<string> Search(string heard, int take, string world)
     {
       List<string> pool;
-      lock (gate) { pool = new List<string>(chunks); }
+      List<string> worlds;
+      lock (gate)
+      {
+        pool = new List<string>(chunks);
+        worlds = new List<string>(chunkWorld);
+      }
       List<string> found = new List<string>();
       if (pool.Count == 0 || heard == null) return found;
+      string asked = Asked(heard, world);
       int guard = 0;
       while (found.Count < take && guard < 12)
       {
@@ -3410,7 +3527,8 @@ namespace Rech
         for (i = 0; i < pool.Count; i++)
         {
           if (pool[i] == null) continue;
-          int score = Score(heard, pool[i]);
+          string mark = i < worlds.Count ? worlds[i] : "";
+          int score = Score(heard, pool[i], mark, world, asked);
           if (score > bestScore)
           {
             bestScore = score;
@@ -3424,6 +3542,26 @@ namespace Rech
         pool[best] = null;
       }
       return found;
+    }
+
+    static string Asked(string heard, string prefer)
+    {
+      if (heard == null) return "";
+      string low = heard.ToLowerInvariant();
+      string[] names = LucyStage.Names();
+      int i;
+      for (i = 0; i < names.Length; i++)
+      {
+        string name = names[i];
+        if (name == null || name.Length < 4) continue;
+        if (string.Equals(name, prefer, StringComparison.OrdinalIgnoreCase)) continue;
+        if (low.IndexOf(name.ToLowerInvariant(), StringComparison.Ordinal) >= 0) return name;
+      }
+      bool hereAzeroth = prefer != null && prefer.IndexOf("азер", StringComparison.OrdinalIgnoreCase) >= 0;
+      bool hereZomb = prefer != null && (prefer.IndexOf("зомб", StringComparison.OrdinalIgnoreCase) >= 0 || prefer.IndexOf("zomb", StringComparison.OrdinalIgnoreCase) >= 0);
+      if (!hereAzeroth && low.Contains("азерот")) return "Азерот";
+      if (!hereZomb && (low.Contains("зомб") || low.Contains("zomboid"))) return "Зомбоид";
+      return "";
     }
 
     static bool Solid(string heard)
@@ -3444,7 +3582,7 @@ namespace Rech
       return false;
     }
 
-    static int Score(string heard, string chunk)
+    static int Score(string heard, string chunk, string worldOfChunk, string prefer, string asked)
     {
       if (chunk == null || heard == null) return 0;
       string low = chunk.ToLowerInvariant();
@@ -3454,6 +3592,14 @@ namespace Rech
         string word = Stem(match.Value);
         if (word.Length < 3 || Stop(word)) continue;
         if (low.IndexOf(word, StringComparison.Ordinal) >= 0) score += word.Length >= 6 ? 2 : 1;
+      }
+      if (asked != null && asked.Length > 0)
+      {
+        if (string.Equals(worldOfChunk, asked, StringComparison.OrdinalIgnoreCase) || low.IndexOf(asked.ToLowerInvariant(), StringComparison.Ordinal) >= 0) score += 6;
+      }
+      else if (prefer != null && prefer.Length > 3)
+      {
+        if (string.Equals(worldOfChunk, prefer, StringComparison.OrdinalIgnoreCase) || low.IndexOf(prefer.ToLowerInvariant(), StringComparison.Ordinal) >= 0) score += 3;
       }
       return score;
     }
@@ -5159,6 +5305,12 @@ namespace Rech
     CheckBox ttsBox;
     CheckBox lucyBox;
     CheckBox modBox;
+    CheckBox faceBox;
+    Label lucyWaitLabel;
+    TrackBar lucyWaitBar;
+    ComboBox worldBox;
+    TextBox worldAdd;
+    List<FaceSet> faces = new List<FaceSet>();
     Label lucyState;
     Button lucyInstall;
     TextBox lucyFacts;
@@ -5489,6 +5641,39 @@ namespace Rech
       modBox = MakeCheck("Люси модерирует: мут за запретные слова, бан за спам");
       modBox.Checked = true;
       Place(right, modBox, 14, ref y, 28);
+      faceBox = MakeCheck("Лицо в углу эфира, когда отвечает");
+      faceBox.Checked = true;
+      Place(right, faceBox, 14, ref y, 28);
+      lucyWaitLabel = MakeMute("Пауза ответа 2 с");
+      Place(right, lucyWaitLabel, 14, ref y, 18);
+      lucyWaitBar = new TrackBar();
+      lucyWaitBar.Minimum = 0;
+      lucyWaitBar.Maximum = 20;
+      lucyWaitBar.TickFrequency = 2;
+      lucyWaitBar.Value = 2;
+      lucyWaitBar.BackColor = Surface;
+      QuietBar(lucyWaitBar);
+      Place(right, lucyWaitBar, 14, ref y, 36);
+      Place(right, MakeMute("Мир, который сейчас в эфире"), 14, ref y, 18);
+      worldBox = new ComboBox();
+      worldBox.DropDownStyle = ComboBoxStyle.DropDownList;
+      StyleCombo(worldBox);
+      Place(right, worldBox, 14, ref y, 28);
+      worldAdd = new TextBox();
+      StyleBox(worldAdd);
+      Place(right, worldAdd, 14, ref y, 28);
+      Button addWorld = MakeButton("Добавить мир", false);
+      addWorld.Click += delegate { AddWorld(); };
+      Place(right, addWorld, 14, ref y, 36);
+      Button pickTalk = MakeButton("Ролик: просто отвечает", false);
+      pickTalk.Click += delegate { PickFace("talk"); };
+      Place(right, pickTalk, 14, ref y, 32);
+      Button pickJoke = MakeButton("Ролик: шутка", false);
+      pickJoke.Click += delegate { PickFace("joke"); };
+      Place(right, pickJoke, 14, ref y, 32);
+      Button pickMad = MakeButton("Ролик: злится", false);
+      pickMad.Click += delegate { PickFace("mad"); };
+      Place(right, pickMad, 14, ref y, 32);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
       Place(right, lucyState, 14, ref y, 58);
       lucyInstall = MakeButton("Скачать Люси", true);
@@ -5971,6 +6156,14 @@ namespace Rech
         save(null, EventArgs.Empty);
       };
       if (modBox != null) modBox.CheckedChanged += save;
+      if (faceBox != null) faceBox.CheckedChanged += delegate { ApplyLucyStage(); save(null, EventArgs.Empty); };
+      if (lucyWaitBar != null) lucyWaitBar.Scroll += delegate
+      {
+        if (lucyWaitLabel != null) lucyWaitLabel.Text = "Пауза ответа " + lucyWaitBar.Value.ToString(CultureInfo.InvariantCulture) + " с";
+        ApplyLucyStage();
+        save(null, EventArgs.Empty);
+      };
+      if (worldBox != null) worldBox.SelectedIndexChanged += delegate { ApplyLucyStage(); save(null, EventArgs.Empty); };
       swearBox.CheckedChanged += save;
       delayBox.ValueChanged += save;
       pauseKeyBox.CheckedChanged += delegate
@@ -6109,6 +6302,45 @@ namespace Rech
       emoteBox.Checked = settings.Engine == null ? true : settings.SkipEmotes;
       if (lucyBox != null) lucyBox.Checked = settings.LucyOn ?? false;
       if (modBox != null) modBox.Checked = settings.LucyMod ?? true;
+      faces = settings.Faces == null ? new List<FaceSet>() : settings.Faces;
+      if (faces.Count == 0)
+      {
+        FaceSet azeroth = new FaceSet();
+        azeroth.Name = "Азерот";
+        azeroth.Talk = "azeroth/talk.mp4";
+        azeroth.Joke = "azeroth/joke.mp4";
+        azeroth.Mad = "azeroth/mad.mp4";
+        FaceSet zomboid = new FaceSet();
+        zomboid.Name = "Зомбоид";
+        zomboid.Talk = "azeroth/talk.mp4";
+        zomboid.Joke = "azeroth/joke.mp4";
+        zomboid.Mad = "azeroth/mad.mp4";
+        faces.Add(azeroth);
+        faces.Add(zomboid);
+      }
+      if (faceBox != null) faceBox.Checked = settings.LucyFace ?? true;
+      if (lucyWaitBar != null)
+      {
+        int wait = settings.LucyWait.HasValue ? settings.LucyWait.Value : 2;
+        if (wait < 0) wait = 0;
+        if (wait > 20) wait = 20;
+        lucyWaitBar.Value = wait;
+        if (lucyWaitLabel != null) lucyWaitLabel.Text = "Пауза ответа " + wait.ToString(CultureInfo.InvariantCulture) + " с";
+      }
+      if (worldBox != null)
+      {
+        worldBox.Items.Clear();
+        int pick = 0;
+        int i;
+        for (i = 0; i < faces.Count; i++)
+        {
+          string name = faces[i] == null || faces[i].Name == null ? "Мир" : faces[i].Name;
+          worldBox.Items.Add(name);
+          if (settings.FaceWorld != null && string.Equals(name, settings.FaceWorld, StringComparison.OrdinalIgnoreCase)) pick = i;
+        }
+        if (worldBox.Items.Count > 0) worldBox.SelectedIndex = pick;
+      }
+      ApplyLucyStage();
       if (lucyFacts != null)
       {
         string saved = settings.LucyFacts;
@@ -6818,6 +7050,53 @@ namespace Rech
       SaveSettings();
     }
 
+    void ApplyLucyStage()
+    {
+      LucyStage.On = faceBox == null || faceBox.Checked;
+      LucyStage.Wait = lucyWaitBar == null ? 2 : lucyWaitBar.Value;
+      FaceSet set = CurrentFace();
+      LucyStage.World = set == null || set.Name == null || set.Name.Length == 0 ? "Азерот" : set.Name;
+      LucyStage.Talk = set == null || set.Talk == null ? "" : set.Talk;
+      LucyStage.Joke = set == null || set.Joke == null ? "" : set.Joke;
+      LucyStage.Mad = set == null || set.Mad == null ? "" : set.Mad;
+    }
+
+    FaceSet CurrentFace()
+    {
+      if (faces == null || worldBox == null || worldBox.SelectedIndex < 0 || worldBox.SelectedIndex >= faces.Count) return null;
+      return faces[worldBox.SelectedIndex];
+    }
+
+    void AddWorld()
+    {
+      if (worldAdd == null) return;
+      string name = worldAdd.Text.Trim();
+      if (name.Length < 2) return;
+      FaceSet set = new FaceSet();
+      set.Name = name;
+      faces.Add(set);
+      worldBox.Items.Add(name);
+      worldBox.SelectedIndex = worldBox.Items.Count - 1;
+      worldAdd.Text = "";
+      ApplyLucyStage();
+      SaveSettings();
+    }
+
+    void PickFace(string mood)
+    {
+      FaceSet set = CurrentFace();
+      if (set == null) return;
+      OpenFileDialog dlg = new OpenFileDialog();
+      dlg.Filter = "Видео без звука|*.mp4;*.webm";
+      dlg.Title = "Ролик Люси";
+      if (dlg.ShowDialog(this) != DialogResult.OK) return;
+      if (mood == "joke") set.Joke = dlg.FileName;
+      else if (mood == "mad") set.Mad = dlg.FileName;
+      else set.Talk = dlg.FileName;
+      ApplyLucyStage();
+      SaveSettings();
+    }
+
     void ConsiderLucy(ChatMessage message)
     {
       if (lucyBox == null || !lucyBox.Checked || message == null) return;
@@ -6849,6 +7128,11 @@ namespace Rech
         }
         string say = answer;
         string note = LucyLocal.LastNote;
+        int wait = LucyStage.Wait;
+        if (wait > 0 && say != null && say.Length > 0)
+        {
+          try { Thread.Sleep(wait * 1000); } catch { }
+        }
         string posted = say.Length == 0 ? "" : Rewards.PostToTwitch(say);
         try
         {
@@ -6862,6 +7146,7 @@ namespace Rech
               return;
             }
             if (lucyState != null) lucyState.Text = posted.Length > 0 ? posted : "Люси написала в чат Twitch.";
+            LucyStage.Show(say);
             ChatMessage reply = new ChatMessage();
             reply.Id = "lucy:" + Guid.NewGuid().ToString("N");
             reply.Platform = "lucy";
@@ -7717,6 +8002,10 @@ namespace Rech
       settings.SkipEmotes = emoteBox.Checked;
       settings.LucyOn = lucyBox != null && lucyBox.Checked;
       settings.LucyMod = modBox == null || modBox.Checked;
+      settings.LucyFace = faceBox == null || faceBox.Checked;
+      settings.LucyWait = lucyWaitBar == null ? 2 : lucyWaitBar.Value;
+      settings.FaceWorld = worldBox != null && worldBox.SelectedIndex >= 0 ? worldBox.SelectedItem.ToString() : "Азерот";
+      settings.Faces = faces;
       settings.LucyFacts = lucyFacts == null ? LucyLocal.Card : lucyFacts.Text;
       settings.TwitchClientId = twitchClient == null ? "" : twitchClient.Text.Trim();
       settings.TwitchToken = twitchToken == null ? "" : twitchToken;
@@ -10032,6 +10321,11 @@ namespace Rech
           {
           }
           if (answer == null || answer.Length == 0) answer = "Не расслышала. Спроси ещё раз короче.";
+          int wait = LucyStage.Wait;
+          if (wait > 0)
+          {
+            try { Thread.Sleep(wait * 1000); } catch { }
+          }
           Tell("Люси", answer, true);
         });
         talk.IsBackground = true;
@@ -10123,6 +10417,7 @@ namespace Rech
 
     static void Tell(string author, string text, bool speak)
     {
+      if (speak) LucyStage.Show(text);
       Action<string, string, bool> handler = Line;
       if (handler != null) handler(author, text, speak);
     }
@@ -10395,6 +10690,13 @@ namespace Rech
           body = Encoding.UTF8.GetBytes(PlayerPage());
           type = "text/html; charset=utf-8";
         }
+        else if (path == "/face")
+        {
+          byte[] clip = LucyStage.Bytes();
+          if (clip == null) clip = new byte[0];
+          body = clip;
+          type = "video/mp4";
+        }
         else if (path == "/feed")
         {
           List<OverlayLine> copy = new List<OverlayLine>();
@@ -10495,7 +10797,8 @@ namespace Rech
         sb.Append(",\"left\":").Append(left.ToString(CultureInfo.InvariantCulture));
         sb.Append('}');
       }
-      sb.Append("]}");
+      sb.Append("],\"face\":").Append(LucyStage.FaceToken().ToString(CultureInfo.InvariantCulture));
+      sb.Append('}');
       return sb.ToString();
     }
 
@@ -10509,14 +10812,26 @@ namespace Rech
         + "#log.plate .row{background:rgba(14,12,10,.78);border-radius:12px;padding:6px 12px 8px;width:fit-content;max-width:100%;}"
         + "#log .nick{color:var(--nick);}#log .mark,#log .time{opacity:.85;font-size:.62em;margin-right:8px;}"
         + "#log .emo{height:1.15em;width:auto;vertical-align:-0.25em;margin:0 2px;}"
+        + "#face{position:fixed;left:8px;bottom:8px;width:220px;height:280px;display:none;z-index:6;pointer-events:none;}"
+        + "#vid{position:fixed;left:-3000px;width:8px;height:8px;opacity:0;}"
         + "#log.shadow .row{text-shadow:0 2px 0 #000,0 0 10px #000;}"
         + "#log.stroke .nick,#log.stroke .text{-webkit-text-stroke:.045em #000;paint-order:stroke fill;}"
-        + "</style></head><body><div id='log'></div><script>"
+        + "</style></head><body><canvas id='face' width='220' height='280'></canvas><video id='vid' muted playsinline></video><div id='log'></div><script>"
         + "function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return c=='&'?'&'+'amp;':c=='<'?'&'+'lt;':'&'+'gt;';});}"
         + "function body(m){var parts=String(m.text||'').split('\\uFFFC');var icons=m.icons||[];var html='';var k;"
         + "for(k=0;k<parts.length;k++){html+=esc(parts[k]);if(k<parts.length-1){var u=icons[k]||'';if(/^https?:\\/\\//.test(u))html+='<img class=\"emo\" src=\"'+esc(u)+'\" alt=\"\">';}}"
         + "return html;}"
-        + "function apply(data){if(!data)return;var s=data.style||{};var root=document.getElementById('log');"
+        + "var faceToken=0;var faceRun=0;"
+        + "function showFace(token){var canvas=document.getElementById('face');var vid=document.getElementById('vid');"
+        + "if(!token){faceToken=0;canvas.style.display='none';try{vid.pause();}catch(e){}return;}"
+        + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;vid.muted=true;vid.volume=0;vid.src='/face?t='+token;"
+        + "var ctx=canvas.getContext('2d',{willReadFrequently:true});"
+        + "function frame(){if(run!==faceRun)return;if(vid.ended||vid.paused&&vid.readyState>2){canvas.style.display='none';return;}"
+        + "if(vid.videoWidth){canvas.style.display='block';ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
+        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>70&&g>r*1.3&&g>b*1.3){var spill=g-Math.max(r,b);d[p+3]=spill>50?0:Math.max(0,255-spill*5);}}"
+        + "ctx.putImageData(img,0,0);}requestAnimationFrame(frame);}"
+        + "vid.onended=function(){canvas.style.display='none';};vid.play().catch(function(){});requestAnimationFrame(frame);}"
+        + "function apply(data){if(!data)return;showFace(data.face||0);var s=data.style||{};var root=document.getElementById('log');"
         + "var stroke=s.stroke||'shadow';"
         + "root.className=(s.align=='top'?'top':'bottom')+(s.plate?' plate':'')+' '+(stroke=='none'?'plain':stroke);"
         + "var font=String(s.font||'Segoe UI').replace(/[\"<>]/g,'');"

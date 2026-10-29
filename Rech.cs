@@ -6736,8 +6736,9 @@ namespace Rech
       if (seen.Contains(message.Id)) return;
       seen.Add(message.Id);
       if (seen.Count > 4000) seen.Clear();
-      if (IsMuted(message.Author)) return;
-      if (message.Fresh && Moderate(message)) return;
+      if (IsRewardPing(message.Text)) return;
+      bool quiet = IsMuted(message.Author);
+      if (message.Fresh && Moderate(message)) quiet = true;
       if (Rewards.Echo(message.Author, message.Text, message.Platform)) return;
       Row row = new Row();
       row.Mark = PlatformMark(message.Platform);
@@ -6758,8 +6759,25 @@ namespace Rech
         downButton.BringToFront();
       }
       Room.Hear(row.Author, row.Text);
-      if (message.Fresh) SpeakLater(message);
-      if (message.Fresh) ConsiderLucy(message);
+      if (message.Fresh && !quiet) SpeakLater(message);
+      if (message.Fresh && !quiet) ConsiderLucy(message);
+    }
+
+    bool IsRewardPing(string text)
+    {
+      if (text == null) return false;
+      string flat = Regex.Replace(text, "\\s+", " ").Trim();
+      if (flat.Length == 0) return false;
+      string lucy = lucyRewardBox == null || lucyRewardBox.Text.Trim().Length == 0 ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
+      string song = songRewardBox == null || songRewardBox.Text.Trim().Length == 0 ? "Заказать песню" : songRewardBox.Text.Trim();
+      return RewardTitle(flat, lucy) || RewardTitle(flat, song);
+    }
+
+    static bool RewardTitle(string text, string title)
+    {
+      if (title == null || title.Length < 3) return false;
+      if (string.Equals(text, title, StringComparison.OrdinalIgnoreCase)) return true;
+      return text.EndsWith(title, StringComparison.OrdinalIgnoreCase) && text.Length <= title.Length + 40;
     }
 
     bool Moderate(ChatMessage message)
@@ -6787,7 +6805,7 @@ namespace Rech
           Rewards.BotStatus = Rewards.Punish(nick, userId, seconds, reason);
         });
       }
-      if (lucyState != null) lucyState.Text = (ban ? "Бан " : "Мут 10 минут ") + message.Author + " · " + reason;
+      if (lucyState != null) lucyState.Text = (ban ? "Бан " : "Мут 10 минут ") + message.Author + ". В ленте видно, вслух не читаю.";
       return true;
     }
 

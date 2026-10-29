@@ -3182,7 +3182,7 @@ namespace Rech
 
     public static int FaceToken()
     {
-      if (!On || File == null || File.Length == 0) return 0;
+      if (File == null || File.Length == 0) return 0;
       if (Until < OverlayHub.NowMs()) return 0;
       return Token;
     }
@@ -5682,6 +5682,17 @@ namespace Rech
       lookBox.ReadOnly = true;
       lookBox.Font = new Font("Consolas", 9f);
       Place(right, lookBox, 14, ref y, 28);
+      Button tryFace = MakeButton("Показать лицо", false);
+      tryFace.Click += delegate
+      {
+        ApplyLucyStage();
+        bool was = LucyStage.On;
+        LucyStage.On = true;
+        LucyStage.Show("привет");
+        LucyStage.On = was;
+        if (lucyState != null) lucyState.Text = LucyStage.File != null && LucyStage.File.Length > 0 ? "Лицо на ссылке выше. Эфир не нужен." : "Ролика нет. Положи talk.mp4 в папку faces или укажи файл.";
+      };
+      Place(right, tryFace, 14, ref y, 32);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
       Place(right, lucyState, 14, ref y, 58);
       lucyInstall = MakeButton("Скачать Люси", true);

@@ -14,7 +14,7 @@
     <Company>Ghostpot</Company>
     <Copyright>Ghostpot — https://ghostpot.ru</Copyright>
     <Description>Люси читает чат эфира</Description>
-    <Version>1.7.12</Version>
+    <Version>1.7.13</Version>
     <ApplicationIcon>lucy.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>

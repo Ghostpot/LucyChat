@@ -5326,6 +5326,7 @@ namespace Rech
     Label rewardState;
     Label songNow;
     TextBox playerBox;
+    TextBox lookBox;
     string twitchToken = "";
     string twitchRefresh = "";
     string twitchBotToken = "";
@@ -5641,7 +5642,7 @@ namespace Rech
       modBox = MakeCheck("Люси модерирует: мут за запретные слова, бан за спам");
       modBox.Checked = true;
       Place(right, modBox, 14, ref y, 28);
-      faceBox = MakeCheck("Лицо в углу эфира, когда отвечает");
+      faceBox = MakeCheck("Показывать лицо, когда отвечает");
       faceBox.Checked = true;
       Place(right, faceBox, 14, ref y, 28);
       lucyWaitLabel = MakeMute("Пауза ответа 2 с");
@@ -5675,6 +5676,12 @@ namespace Rech
       pickMad.Click += delegate { PickFace("mad"); };
       Place(right, pickMad, 14, ref y, 32);
       Place(right, MakeWrap("Ролики не в комплекте. Положи свои в папку faces рядом с RECH.exe: azeroth и zomboid, внутри talk.mp4, joke.mp4, mad.mp4. Или укажи файл кнопкой."), 14, ref y, 72);
+      Place(right, MakeMute("Лицо в OBS — отдельный источник «Браузер». Поставь его куда нужно. Пока она молчит, там пусто."), 14, ref y, 48);
+      lookBox = new TextBox();
+      StyleBox(lookBox);
+      lookBox.ReadOnly = true;
+      lookBox.Font = new Font("Consolas", 9f);
+      Place(right, lookBox, 14, ref y, 28);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
       Place(right, lucyState, 14, ref y, 58);
       lucyInstall = MakeButton("Скачать Люси", true);
@@ -6094,6 +6101,7 @@ namespace Rech
       hub.Start();
       urlBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/" : "ссылка не открылась";
       if (playerBox != null) playerBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/player" : "";
+      if (lookBox != null) lookBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/look" : "";
       ClipWindow.Home = playerBox == null ? "" : playerBox.Text;
       ApplyListen();
       UpdatePlaceholder();
@@ -10745,6 +10753,11 @@ namespace Rech
           body = Encoding.UTF8.GetBytes(PlayerPage());
           type = "text/html; charset=utf-8";
         }
+        else if (path == "/look")
+        {
+          body = Encoding.UTF8.GetBytes(LookPage());
+          type = "text/html; charset=utf-8";
+        }
         else if (path == "/face")
         {
           byte[] clip = LucyStage.Bytes();
@@ -10867,26 +10880,14 @@ namespace Rech
         + "#log.plate .row{background:rgba(14,12,10,.78);border-radius:12px;padding:6px 12px 8px;width:fit-content;max-width:100%;}"
         + "#log .nick{color:var(--nick);}#log .mark,#log .time{opacity:.85;font-size:.62em;margin-right:8px;}"
         + "#log .emo{height:1.15em;width:auto;vertical-align:-0.25em;margin:0 2px;}"
-        + "#face{position:fixed;left:8px;bottom:8px;width:220px;height:280px;display:none;z-index:6;pointer-events:none;}"
-        + "#vid{position:fixed;left:-3000px;width:8px;height:8px;opacity:0;}"
         + "#log.shadow .row{text-shadow:0 2px 0 #000,0 0 10px #000;}"
         + "#log.stroke .nick,#log.stroke .text{-webkit-text-stroke:.045em #000;paint-order:stroke fill;}"
-        + "</style></head><body><canvas id='face' width='220' height='280'></canvas><video id='vid' muted playsinline></video><div id='log'></div><script>"
+        + "</style></head><body><div id='log'></div><script>"
         + "function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return c=='&'?'&'+'amp;':c=='<'?'&'+'lt;':'&'+'gt;';});}"
         + "function body(m){var parts=String(m.text||'').split('\\uFFFC');var icons=m.icons||[];var html='';var k;"
         + "for(k=0;k<parts.length;k++){html+=esc(parts[k]);if(k<parts.length-1){var u=icons[k]||'';if(/^https?:\\/\\//.test(u))html+='<img class=\"emo\" src=\"'+esc(u)+'\" alt=\"\">';}}"
         + "return html;}"
-        + "var faceToken=0;var faceRun=0;"
-        + "function showFace(token){var canvas=document.getElementById('face');var vid=document.getElementById('vid');"
-        + "if(!token){faceToken=0;canvas.style.display='none';try{vid.pause();}catch(e){}return;}"
-        + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;vid.muted=true;vid.volume=0;vid.src='/face?t='+token;"
-        + "var ctx=canvas.getContext('2d',{willReadFrequently:true});"
-        + "function frame(){if(run!==faceRun)return;if(vid.ended||vid.paused&&vid.readyState>2){canvas.style.display='none';return;}"
-        + "if(vid.videoWidth){canvas.style.display='block';ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
-        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>70&&g>r*1.3&&g>b*1.3){var spill=g-Math.max(r,b);d[p+3]=spill>50?0:Math.max(0,255-spill*5);}}"
-        + "ctx.putImageData(img,0,0);}requestAnimationFrame(frame);}"
-        + "vid.onended=function(){canvas.style.display='none';};vid.play().catch(function(){});requestAnimationFrame(frame);}"
-        + "function apply(data){if(!data)return;showFace(data.face||0);var s=data.style||{};var root=document.getElementById('log');"
+        + "function apply(data){if(!data)return;var s=data.style||{};var root=document.getElementById('log');"
         + "var stroke=s.stroke||'shadow';"
         + "root.className=(s.align=='top'?'top':'bottom')+(s.plate?' plate':'')+' '+(stroke=='none'?'plain':stroke);"
         + "var font=String(s.font||'Segoe UI').replace(/[\"<>]/g,'');"
@@ -10903,6 +10904,30 @@ namespace Rech
         + "root.innerHTML=html;}"
         + "function tick(){var x=new XMLHttpRequest();x.open('GET','/feed?t='+Date.now(),true);"
         + "x.onload=function(){if(x.status!=200)return;try{apply(JSON.parse(x.responseText));}catch(e){}};"
+        + "x.send();}"
+        + "setInterval(tick,250);tick();"
+        + "</script></body></html>";
+    }
+
+    static string LookPage()
+    {
+      return "<!doctype html><html><head><meta charset='utf-8'><title>Люси</title><style>"
+        + "html,body{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden;}"
+        + "#face{position:fixed;left:0;top:0;width:100%;height:100%;display:none;}"
+        + "#vid{position:fixed;left:-3000px;width:8px;height:8px;opacity:0;}"
+        + "</style></head><body><canvas id='face' width='480' height='600'></canvas><video id='vid' muted playsinline></video><script>"
+        + "var faceToken=0;var faceRun=0;"
+        + "function showFace(token){var canvas=document.getElementById('face');var vid=document.getElementById('vid');"
+        + "if(!token){faceToken=0;canvas.style.display='none';try{vid.pause();}catch(e){}return;}"
+        + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;vid.muted=true;vid.volume=0;vid.src='/face?t='+token;"
+        + "var ctx=canvas.getContext('2d',{willReadFrequently:true});"
+        + "function frame(){if(run!==faceRun)return;if(vid.ended||(vid.paused&&vid.readyState>2)){canvas.style.display='none';return;}"
+        + "if(vid.videoWidth){canvas.style.display='block';ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
+        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>70&&g>r*1.3&&g>b*1.3){var spill=g-Math.max(r,b);d[p+3]=spill>50?0:Math.max(0,255-spill*5);}}"
+        + "ctx.putImageData(img,0,0);}requestAnimationFrame(frame);}"
+        + "vid.onended=function(){canvas.style.display='none';};vid.play().catch(function(){});requestAnimationFrame(frame);}"
+        + "function tick(){var x=new XMLHttpRequest();x.open('GET','/feed?t='+Date.now(),true);"
+        + "x.onload=function(){if(x.status!=200)return;try{var data=JSON.parse(x.responseText);showFace(data.face||0);}catch(e){}};"
         + "x.send();}"
         + "setInterval(tick,250);tick();"
         + "</script></body></html>";

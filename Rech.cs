@@ -5674,6 +5674,7 @@ namespace Rech
       Button pickMad = MakeButton("Ролик: злится", false);
       pickMad.Click += delegate { PickFace("mad"); };
       Place(right, pickMad, 14, ref y, 32);
+      Place(right, MakeWrap("Ролики не в комплекте. Положи свои в папку faces рядом с RECH.exe: azeroth и zomboid, внутри talk.mp4, joke.mp4, mad.mp4. Или укажи файл кнопкой."), 14, ref y, 72);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
       Place(right, lucyState, 14, ref y, 58);
       lucyInstall = MakeButton("Скачать Люси", true);
@@ -6312,12 +6313,26 @@ namespace Rech
         azeroth.Mad = "azeroth/mad.mp4";
         FaceSet zomboid = new FaceSet();
         zomboid.Name = "Зомбоид";
-        zomboid.Talk = "azeroth/talk.mp4";
-        zomboid.Joke = "azeroth/joke.mp4";
-        zomboid.Mad = "azeroth/mad.mp4";
+        zomboid.Talk = "zomboid/talk.mp4";
+        zomboid.Joke = "zomboid/joke.mp4";
+        zomboid.Mad = "zomboid/mad.mp4";
         faces.Add(azeroth);
         faces.Add(zomboid);
       }
+      int n;
+      for (n = 0; n < faces.Count; n++)
+      {
+        FaceSet set = faces[n];
+        if (set == null || set.Name == null) continue;
+        if (!string.Equals(set.Name, "Зомбоид", StringComparison.OrdinalIgnoreCase)) continue;
+        if (set.Talk != null && set.Talk.StartsWith("azeroth/", StringComparison.OrdinalIgnoreCase))
+        {
+          set.Talk = "zomboid/talk.mp4";
+          set.Joke = "zomboid/joke.mp4";
+          set.Mad = "zomboid/mad.mp4";
+        }
+      }
+      EnsureFaceFolders();
       if (faceBox != null) faceBox.Checked = settings.LucyFace ?? true;
       if (lucyWaitBar != null)
       {
@@ -7074,12 +7089,52 @@ namespace Rech
       if (name.Length < 2) return;
       FaceSet set = new FaceSet();
       set.Name = name;
+      string folder = Regex.Replace(name.ToLowerInvariant(), "[^a-zа-яё0-9]+", "");
+      if (folder.Length == 0) folder = "mir";
+      set.Talk = folder + "/talk.mp4";
+      set.Joke = folder + "/joke.mp4";
+      set.Mad = folder + "/mad.mp4";
       faces.Add(set);
       worldBox.Items.Add(name);
       worldBox.SelectedIndex = worldBox.Items.Count - 1;
       worldAdd.Text = "";
       ApplyLucyStage();
       SaveSettings();
+      EnsureFaceFolders();
+    }
+
+    void EnsureFaceFolders()
+    {
+      string exe = Environment.ProcessPath;
+      string dir = exe == null ? "" : Path.GetDirectoryName(exe);
+      if (dir == null || dir.Length == 0) return;
+      string root = Path.Combine(dir, "faces");
+      try
+      {
+        Directory.CreateDirectory(Path.Combine(root, "azeroth"));
+        Directory.CreateDirectory(Path.Combine(root, "zomboid"));
+        if (faces == null) return;
+        int i;
+        for (i = 0; i < faces.Count; i++)
+        {
+          FaceSet set = faces[i];
+          if (set == null) continue;
+          EnsureFaceFile(root, set.Talk);
+          EnsureFaceFile(root, set.Joke);
+          EnsureFaceFile(root, set.Mad);
+        }
+      }
+      catch
+      {
+      }
+    }
+
+    static void EnsureFaceFile(string root, string path)
+    {
+      if (path == null || path.Length == 0 || Path.IsPathRooted(path)) return;
+      string full = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
+      string folder = Path.GetDirectoryName(full);
+      if (folder != null && folder.Length > 0) Directory.CreateDirectory(folder);
     }
 
     void PickFace(string mood)

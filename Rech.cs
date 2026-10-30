@@ -294,6 +294,25 @@ namespace Rech
     }
   }
 
+  static class Plea
+  {
+    public static bool Enough(string text)
+    {
+      if (text == null) return false;
+      string low = text.ToLowerInvariant().Replace('ё', 'е');
+      if (!Regex.IsMatch(low, "(?<![a-zа-я])(люси|люся|lucy)(?![a-zа-я])", RegexOptions.IgnoreCase)) return false;
+      string[] stems = new string[] { "умоля", "молю", "прости", "прощен", "пощад", "пресмык", "на колен", "разбан", "сними мут", "виноват", "каюсь", "каясь", "больше не буд", "сжаль", "помил", "извини" };
+      int hits = 0;
+      int i;
+      for (i = 0; i < stems.Length; i++)
+      {
+        if (low.IndexOf(stems[i], StringComparison.Ordinal) >= 0) hits++;
+      }
+      if (low.IndexOf("умоля", StringComparison.Ordinal) >= 0 || low.IndexOf("пресмык", StringComparison.Ordinal) >= 0 || low.IndexOf("на колен", StringComparison.Ordinal) >= 0) hits++;
+      return hits >= 2;
+    }
+  }
+
   public class RoomPerson
   {
     public string Name;
@@ -7123,7 +7142,13 @@ namespace Rech
       if (seen.Count > 4000) seen.Clear();
       if (IsRewardPing(message.Text)) return;
       bool quiet = IsMuted(message.Author);
-      if (message.Fresh && Moderate(message)) quiet = true;
+      bool mercy = false;
+      if (message.Fresh && quiet && Plea.Enough(message.Text) && !Swear.Has(message.Text))
+      {
+        mercy = true;
+        Forgive(message);
+      }
+      else if (message.Fresh && Moderate(message)) quiet = true;
       if (Rewards.Echo(message.Author, message.Text, message.Platform)) return;
       Row row = new Row();
       row.Mark = PlatformMark(message.Platform);
@@ -7145,7 +7170,66 @@ namespace Rech
       }
       Room.Hear(row.Author, row.Text);
       if (message.Fresh && !quiet) SpeakLater(message);
-      if (message.Fresh && !quiet) ConsiderLucy(message);
+      if (message.Fresh && !quiet && !mercy) ConsiderLucy(message);
+    }
+
+    void Forgive(ChatMessage message)
+    {
+      string nick = message.Author == null ? "" : message.Author.Trim();
+      if (nick.Length == 0) return;
+      string userId = message.UserId;
+      string platform = message.Platform;
+      ForgetMute(nick);
+      if (platform == "twitch")
+      {
+        ThreadPool.QueueUserWorkItem(delegate { Rewards.Pardon(nick, userId); });
+      }
+      SayAsLucy("@" + nick + ", ладно. Просьба достаточно жалкая. Прощаю и снимаю наказание. Ещё раз — шанса не будет.");
+    }
+
+    void ForgetMute(string author)
+    {
+      if (author == null || muteBox == null) return;
+      string[] parts = muteBox.Text.Split(new char[] { '\n', '\r', ',' });
+      StringBuilder kept = new StringBuilder();
+      int i;
+      for (i = 0; i < parts.Length; i++)
+      {
+        string part = parts[i].Trim();
+        if (part.Length == 0) continue;
+        if (string.Equals(part, author.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
+        if (kept.Length > 0) kept.Append("\r\n");
+        kept.Append(part);
+      }
+      muteBox.Text = kept.ToString();
+    }
+
+    void SayAsLucy(string text)
+    {
+      if (text == null || text.Length == 0) return;
+      ThreadPool.QueueUserWorkItem(delegate
+      {
+        try { Rewards.PostToTwitch(text); } catch { }
+        try
+        {
+          BeginInvoke(new Action(delegate
+          {
+            ApplyLucyStage();
+            LucyStage.Show(text);
+            ChatMessage reply = new ChatMessage();
+            reply.Id = "lucy:" + Guid.NewGuid().ToString("N");
+            reply.Platform = "lucy";
+            reply.Author = "Люси";
+            reply.Text = text;
+            reply.Ts = Net.Now();
+            reply.Fresh = true;
+            AddMessage(reply);
+          }));
+        }
+        catch
+        {
+        }
+      });
     }
 
     bool IsRewardPing(string text)
@@ -7191,6 +7275,8 @@ namespace Rech
         });
       }
       if (lucyState != null) lucyState.Text = (ban ? "Бан " : "Мут 10 минут ") + message.Author + ". В ленте видно, вслух не читаю.";
+      string nick = message.Author == null ? "ты" : message.Author.Trim();
+      SayAsLucy("@" + nick + ", ты в наказании. Шанс есть. Умоляй меня, пресмыкайся и проси разбанить. Подумаю. Может, прощу.");
       return true;
     }
 
@@ -10084,6 +10170,61 @@ namespace Rech
         if (note.IndexOf("403", StringComparison.Ordinal) >= 0) return "Lucy не модератор, мут не поставлен.";
         if (note.Length > 120) note = note.Substring(0, 120);
         return "Мут не поставлен: " + note;
+      }
+    }
+
+    public static string Pardon(string login, string userId)
+    {
+      return PardonTry(login, userId, true);
+    }
+
+    static string PardonTry(string login, string userId, bool allowRefresh)
+    {
+      login = login == null ? "" : login.Trim();
+      if (login.Length == 0) return "Прощение не вышло: нет ника.";
+      string token;
+      string refresh;
+      string client;
+      string channel;
+      string sender;
+      lock (gate)
+      {
+        token = botToken;
+        refresh = botRefresh;
+        client = prefs.ClientId;
+        channel = channelName;
+        sender = botUserId;
+      }
+      if (token == null || token.Length == 0) return "Прощение не вышло: войди аккаунтом Lucy.";
+      if (channel == null || channel.Length == 0 || client == null || client.Length == 0) return "Прощение не вышло: нет канала.";
+      try
+      {
+        if (sender == null || sender.Length == 0)
+        {
+          JObject me = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users", token, client));
+          sender = (string)me.SelectToken("data[0].id");
+          lock (gate) { botUserId = sender == null ? "" : sender; }
+        }
+        if (userId == null || userId.Length == 0)
+        {
+          JObject who = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users?login=" + Uri.EscapeDataString(login.ToLowerInvariant()), token, client));
+          userId = (string)who.SelectToken("data[0].id");
+        }
+        if (userId == null || userId.Length == 0) return "Прощение не вышло: не нашла " + login + ".";
+        string broad = Broad(token, client, channel);
+        string url = "https://api.twitch.tv/helix/moderation/bans?broadcaster_id=" + Uri.EscapeDataString(broad) + "&moderator_id=" + Uri.EscapeDataString(sender) + "&user_id=" + Uri.EscapeDataString(userId);
+        HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Delete, url);
+        req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+        req.Headers.TryAddWithoutValidation("Client-Id", client);
+        Send(req);
+        return "Простила " + login + ".";
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "ошибка" : ex.Message;
+        if (allowRefresh && note.StartsWith("401", StringComparison.Ordinal) && refresh != null && refresh.Length > 0 && RefreshBot(client, refresh).Length > 0) return PardonTry(login, userId, false);
+        if (note.IndexOf("404", StringComparison.Ordinal) >= 0) return "На Twitch наказания уже не было.";
+        return "Прощение не вышло: " + (note.Length > 120 ? note.Substring(0, 120) : note);
       }
     }
 

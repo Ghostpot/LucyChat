@@ -5690,7 +5690,7 @@ namespace Rech
       pickMad.Click += delegate { PickFace("mad"); };
       Place(right, pickMad, 14, ref y, 32);
       Place(right, MakeWrap("Ролики не в комплекте. Положи свои в папку faces рядом с RECH.exe: azeroth и zomboid, внутри talk.mp4, joke.mp4, mad.mp4. Или укажи файл кнопкой."), 14, ref y, 72);
-      Place(right, MakeMute("Лицо в OBS — отдельный источник «Браузер». Поставь его куда нужно. Пока она молчит, там пусто."), 14, ref y, 48);
+      Place(right, MakeMute("Лицо в OBS — отдельный источник «Браузер». Вставь ссылку заново и обнови источник. Пока она молчит, там пусто."), 14, ref y, 48);
       lookBox = new TextBox();
       StyleBox(lookBox);
       lookBox.ReadOnly = true;
@@ -6126,7 +6126,7 @@ namespace Rech
       hub.Start();
       urlBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/" : "ссылка не открылась";
       if (playerBox != null) playerBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/player" : "";
-      if (lookBox != null) lookBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/look" : "";
+      if (lookBox != null) lookBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/look?v=15" : "";
       ClipWindow.Home = playerBox == null ? "" : playerBox.Text;
       ApplyListen();
       UpdatePlaceholder();
@@ -10737,7 +10737,7 @@ namespace Rech
         client.ReceiveTimeout = 2000;
         client.SendTimeout = 2000;
         NetworkStream stream = client.GetStream();
-        byte[] buffer = new byte[4096];
+        byte[] buffer = new byte[65536];
         int read = 0;
         while (read < buffer.Length)
         {
@@ -10977,18 +10977,20 @@ namespace Rech
       return "<!doctype html><html><head><meta charset='utf-8'><title>Люси</title><style>"
         + "html,body{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden;}"
         + "#face{position:fixed;left:0;top:0;width:100%;height:100%;display:none;}"
-        + "#vid{position:fixed;left:-3000px;width:8px;height:8px;opacity:0;}"
-        + "</style></head><body><canvas id='face' width='480' height='600'></canvas><video id='vid' muted playsinline></video><script>"
+        + "#vid{position:fixed;left:0;top:0;width:100%;height:100%;object-fit:contain;opacity:0;}"
+        + "</style></head><body><canvas id='face' width='360' height='480'></canvas><video id='vid' muted autoplay playsinline loop></video><script>"
         + "var faceToken=0;var faceRun=0;"
         + "function showFace(token){var canvas=document.getElementById('face');var vid=document.getElementById('vid');"
-        + "if(!token){if(!faceToken)return;faceToken=0;faceRun++;canvas.style.display='none';try{vid.pause();}catch(e){}return;}"
-        + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;vid.muted=true;vid.defaultMuted=true;vid.volume=0;vid.loop=true;vid.src='/face?t='+token;"
-        + "var ctx=canvas.getContext('2d',{willReadFrequently:true});"
-        + "function frame(){if(run!==faceRun)return;if(vid.videoWidth){canvas.style.display='block';ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
-        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>80&&g>r+35&&g>b+35){var spill=g-Math.max(r,b);d[p+3]=spill>60?0:Math.max(0,255-spill*4);}}"
-        + "ctx.putImageData(img,0,0);}requestAnimationFrame(frame);}"
-        + "function kick(){vid.play().catch(function(){});}"
-        + "vid.onloadeddata=kick;vid.oncanplay=kick;kick();requestAnimationFrame(frame);}"
+        + "if(!token){if(!faceToken)return;faceToken=0;faceRun++;canvas.style.display='none';vid.style.opacity='0';try{vid.pause();}catch(e){}return;}"
+        + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;"
+        + "vid.muted=true;vid.defaultMuted=true;vid.volume=0;vid.loop=true;vid.src='/face?t='+token;"
+        + "var ctx=canvas.getContext('2d',{alpha:true,willReadFrequently:true});var painted=false;"
+        + "function frame(){if(run!==faceRun)return;try{if(vid.readyState>=2&&vid.videoWidth){ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
+        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>70&&g>r+28&&g>b+28){var spill=g-Math.max(r,b);d[p+3]=spill>48?0:Math.max(0,255-spill*4);}}"
+        + "ctx.putImageData(img,0,0);canvas.style.display='block';painted=true;}}catch(e){vid.style.opacity='1';}"
+        + "if(!painted&&vid.readyState>=2)vid.style.opacity='1';requestAnimationFrame(frame);}"
+        + "function kick(){var p=vid.play();if(p&&p.catch)p.catch(function(){});}"
+        + "vid.onloadeddata=kick;vid.oncanplay=kick;vid.onerror=function(){canvas.style.display='none';};kick();requestAnimationFrame(frame);}"
         + "function tick(){var x=new XMLHttpRequest();x.open('GET','/feed?t='+Date.now(),true);"
         + "x.onload=function(){if(x.status!=200)return;try{var data=JSON.parse(x.responseText);showFace(data.face||0);}catch(e){}};"
         + "x.send();}"

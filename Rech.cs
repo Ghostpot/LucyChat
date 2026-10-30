@@ -489,6 +489,7 @@ namespace Rech
     public bool? LucyMod;
     public bool? LucyFace;
     public int? LucyWait;
+    public int? LucySpan;
     public string FaceWorld;
     public List<FaceSet> Faces;
     public string LucyFacts;
@@ -3142,6 +3143,7 @@ namespace Rech
   {
     public static bool On;
     public static int Wait;
+    public static int Span = 6;
     public static string World = "Азерот";
     public static string Talk = "";
     public static string Joke = "";
@@ -3180,7 +3182,19 @@ namespace Rech
       }
       File = path;
       Token = Token + 1;
-      Until = OverlayHub.NowMs() + 15000;
+      int span = Span < 2 ? 6 : Span;
+      if (span > 30) span = 30;
+      int letters = 0;
+      int i;
+      for (i = 0; i < answer.Length; i++)
+      {
+        char c = answer[i];
+        if (char.IsLetterOrDigit(c)) letters++;
+      }
+      int seconds = letters * span / 70;
+      if (seconds < span) seconds = span;
+      if (seconds > 45) seconds = 45;
+      Until = OverlayHub.NowMs() + seconds * 1000L;
     }
 
     static string FirstClip(params string[] paths)
@@ -5322,6 +5336,8 @@ namespace Rech
     CheckBox faceBox;
     Label lucyWaitLabel;
     TrackBar lucyWaitBar;
+    Label faceSpanLabel;
+    TrackBar faceSpanBar;
     ComboBox worldBox;
     TextBox worldAdd;
     List<FaceSet> faces = new List<FaceSet>();
@@ -5659,6 +5675,16 @@ namespace Rech
       faceBox = MakeCheck("Показывать лицо, когда отвечает");
       faceBox.Checked = true;
       Place(right, faceBox, 14, ref y, 28);
+      faceSpanLabel = MakeMute("Лицо 6 с на короткую фразу");
+      Place(right, faceSpanLabel, 14, ref y, 18);
+      faceSpanBar = new TrackBar();
+      faceSpanBar.Minimum = 2;
+      faceSpanBar.Maximum = 20;
+      faceSpanBar.TickFrequency = 2;
+      faceSpanBar.Value = 6;
+      faceSpanBar.BackColor = Surface;
+      QuietBar(faceSpanBar);
+      Place(right, faceSpanBar, 14, ref y, 36);
       lucyWaitLabel = MakeMute("Пауза ответа 2 с");
       Place(right, lucyWaitLabel, 14, ref y, 18);
       lucyWaitBar = new TrackBar();
@@ -6197,6 +6223,12 @@ namespace Rech
         ApplyLucyStage();
         save(null, EventArgs.Empty);
       };
+      if (faceSpanBar != null) faceSpanBar.Scroll += delegate
+      {
+        if (faceSpanLabel != null) faceSpanLabel.Text = "Лицо " + faceSpanBar.Value.ToString(CultureInfo.InvariantCulture) + " с на короткую фразу";
+        ApplyLucyStage();
+        save(null, EventArgs.Empty);
+      };
       if (worldBox != null) worldBox.SelectedIndexChanged += delegate { ApplyLucyStage(); save(null, EventArgs.Empty); };
       swearBox.CheckedChanged += save;
       delayBox.ValueChanged += save;
@@ -6374,6 +6406,14 @@ namespace Rech
         if (wait > 20) wait = 20;
         lucyWaitBar.Value = wait;
         if (lucyWaitLabel != null) lucyWaitLabel.Text = "Пауза ответа " + wait.ToString(CultureInfo.InvariantCulture) + " с";
+      }
+      if (faceSpanBar != null)
+      {
+        int span = settings.LucySpan.HasValue ? settings.LucySpan.Value : 6;
+        if (span < 2) span = 2;
+        if (span > 20) span = 20;
+        faceSpanBar.Value = span;
+        if (faceSpanLabel != null) faceSpanLabel.Text = "Лицо " + span.ToString(CultureInfo.InvariantCulture) + " с на короткую фразу";
       }
       if (worldBox != null)
       {
@@ -7102,6 +7142,7 @@ namespace Rech
     {
       LucyStage.On = faceBox == null || faceBox.Checked;
       LucyStage.Wait = lucyWaitBar == null ? 2 : lucyWaitBar.Value;
+      LucyStage.Span = faceSpanBar == null ? 6 : faceSpanBar.Value;
       FaceSet set = CurrentFace();
       LucyStage.World = set == null || set.Name == null || set.Name.Length == 0 ? "Азерот" : set.Name;
       LucyStage.Talk = set == null || set.Talk == null ? "" : set.Talk;
@@ -8094,6 +8135,7 @@ namespace Rech
       settings.LucyMod = modBox == null || modBox.Checked;
       settings.LucyFace = faceBox == null || faceBox.Checked;
       settings.LucyWait = lucyWaitBar == null ? 2 : lucyWaitBar.Value;
+      settings.LucySpan = faceSpanBar == null ? 6 : faceSpanBar.Value;
       settings.FaceWorld = worldBox != null && worldBox.SelectedIndex >= 0 ? worldBox.SelectedItem.ToString() : "Азерот";
       settings.Faces = faces;
       settings.LucyFacts = lucyFacts == null ? LucyLocal.Card : lucyFacts.Text;

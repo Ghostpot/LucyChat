@@ -564,6 +564,8 @@ namespace Rech
     public string TwitchBotToken;
     public string TwitchBotRefresh;
     public string TwitchBotLogin;
+    public string GgModId;
+    public string GgModToken;
     public string SongReward;
     public string LucyReward;
     public int SongSeconds;
@@ -1577,6 +1579,8 @@ namespace Rech
             chat.SourceId = source.Id;
             chat.Platform = "goodgame";
             chat.Author = author;
+            chat.UserId = Net.S(Net.Get(data, "user_id"));
+            if (chat.UserId.Length == 0) chat.UserId = Net.S(Net.Get(data, "userId"));
             chat.Text = text;
             chat.Icons = icons;
             chat.Ts = Net.ToMs(Net.Get(data, "timestamp"));
@@ -5398,6 +5402,8 @@ namespace Rech
     CheckBox ttsBox;
     CheckBox lucyBox;
     CheckBox modBox;
+    TextBox ggModId;
+    TextBox ggModToken;
     CheckBox faceBox;
     Label lucyWaitLabel;
     TrackBar lucyWaitBar;
@@ -5738,6 +5744,15 @@ namespace Rech
       modBox = MakeCheck("Люси модерирует: мут за запретные слова, бан за спам");
       modBox.Checked = true;
       Place(right, modBox, 14, ref y, 28);
+      Place(right, MakeWrap("Пишет только в чат Twitch. На остальных площадках затыкает у себя. На GoodGame банит, если вписать id и токен помощника."), 14, ref y, 58);
+      Place(right, MakeMute("GoodGame: id помощника"), 14, ref y, 18);
+      ggModId = new TextBox();
+      StyleBox(ggModId);
+      Place(right, ggModId, 14, ref y, 28);
+      Place(right, MakeMute("GoodGame: токен помощника"), 14, ref y, 18);
+      ggModToken = new TextBox();
+      StyleBox(ggModToken);
+      Place(right, ggModToken, 14, ref y, 28);
       faceBox = MakeCheck("Показывать лицо, когда отвечает");
       faceBox.Checked = true;
       Place(right, faceBox, 14, ref y, 28);
@@ -6289,6 +6304,8 @@ namespace Rech
         save(null, EventArgs.Empty);
       };
       if (modBox != null) modBox.CheckedChanged += save;
+      if (ggModId != null) ggModId.TextChanged += save;
+      if (ggModToken != null) ggModToken.TextChanged += save;
       if (faceBox != null) faceBox.CheckedChanged += delegate { ApplyLucyStage(); save(null, EventArgs.Empty); };
       if (lucyWaitBar != null) lucyWaitBar.Scroll += delegate
       {
@@ -6447,6 +6464,8 @@ namespace Rech
       emoteBox.Checked = settings.Engine == null ? true : settings.SkipEmotes;
       if (lucyBox != null) lucyBox.Checked = settings.LucyOn ?? false;
       if (modBox != null) modBox.Checked = settings.LucyMod ?? true;
+      if (ggModId != null) ggModId.Text = settings.GgModId == null ? "" : settings.GgModId;
+      if (ggModToken != null) ggModToken.Text = settings.GgModToken == null ? "" : settings.GgModToken;
       faces = settings.Faces == null ? new List<FaceSet>() : settings.Faces;
       if (faces.Count == 0)
       {
@@ -7184,6 +7203,13 @@ namespace Rech
       {
         ThreadPool.QueueUserWorkItem(delegate { Rewards.Pardon(nick, userId); });
       }
+      else if (platform == "goodgame")
+      {
+        string room = RoomInput(message.SourceId);
+        string modId = ggModId == null ? "" : ggModId.Text.Trim();
+        string token = ggModToken == null ? "" : ggModToken.Text.Trim();
+        ThreadPool.QueueUserWorkItem(delegate { Rewards.BanGoodgame(modId, token, room, userId, 0, "", true); });
+      }
       SayAsLucy("@" + nick + ", ладно. Просьба достаточно жалкая. Прощаю и снимаю наказание. Ещё раз — шанса не будет.");
     }
 
@@ -7265,6 +7291,7 @@ namespace Rech
       RememberMute(message.Author);
       string reason = ban ? "спам" : "запрещённые слова";
       string who = message.Author == null ? "ты" : message.Author.Trim();
+      string place = PlaceName(message.Platform);
       if (message.Platform == "twitch")
       {
         string userId = message.UserId;
@@ -7274,9 +7301,50 @@ namespace Rech
           Rewards.BotStatus = Rewards.Punish(who, userId, seconds, reason);
         });
       }
-      if (lucyState != null) lucyState.Text = (ban ? "Бан " : "Мут 10 минут ") + who + ". В ленте видно, вслух не читаю.";
-      SayAsLucy("@" + who + ", ты в наказании. Шанс есть. Умоляй меня, пресмыкайся и проси разбанить. Подумаю. Может, прощу.");
+      else if (message.Platform == "goodgame")
+      {
+        string userId = message.UserId;
+        string room = RoomInput(message.SourceId);
+        string modId = ggModId == null ? "" : ggModId.Text.Trim();
+        string token = ggModToken == null ? "" : ggModToken.Text.Trim();
+        int minutes = ban ? 0 : 10;
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+          Rewards.BotStatus = Rewards.BanGoodgame(modId, token, room, userId, minutes, reason, false);
+        });
+      }
+      if (lucyState != null)
+      {
+        lucyState.Text = message.Platform == "twitch"
+          ? (ban ? "Бан " : "Мут 10 минут ") + who + ". Пишет только в Twitch."
+          : "Заткнула " + who + " (" + place + "). Пишет только в Twitch.";
+      }
+      SayAsLucy("@" + who + " с " + place + ", ты в наказании. Шанс есть. Умоляй меня, пресмыкайся и проси разбанить. Подумаю. Может, прощу.");
       return true;
+    }
+
+    static string PlaceName(string platform)
+    {
+      if (platform == "youtube") return "YouTube";
+      if (platform == "vk") return "VK";
+      if (platform == "goodgame") return "GoodGame";
+      if (platform == "rutube") return "Rutube";
+      if (platform == "wtv") return "w.tv";
+      if (platform == "steam") return "Steam";
+      if (platform == "da") return "DonationAlerts";
+      if (platform == "boosty") return "Boosty";
+      return "Twitch";
+    }
+
+    string RoomInput(string sourceId)
+    {
+      if (sourceId == null) return "";
+      int i;
+      for (i = 0; i < sources.Count; i++)
+      {
+        if (sources[i] != null && sources[i].Id == sourceId) return sources[i].Input == null ? "" : sources[i].Input;
+      }
+      return "";
     }
 
     void RememberMute(string author)
@@ -8283,6 +8351,8 @@ namespace Rech
       settings.SkipEmotes = emoteBox.Checked;
       settings.LucyOn = lucyBox != null && lucyBox.Checked;
       settings.LucyMod = modBox == null || modBox.Checked;
+      settings.GgModId = ggModId == null ? "" : ggModId.Text.Trim();
+      settings.GgModToken = ggModToken == null ? "" : ggModToken.Text.Trim();
       settings.LucyFace = faceBox == null || faceBox.Checked;
       settings.LucyWait = lucyWaitBar == null ? 2 : lucyWaitBar.Value;
       settings.LucySpan = faceSpanBar == null ? 6 : faceSpanBar.Value;
@@ -10225,6 +10295,76 @@ namespace Rech
         if (note.IndexOf("404", StringComparison.Ordinal) >= 0) return "На Twitch наказания уже не было.";
         return "Прощение не вышло: " + (note.Length > 120 ? note.Substring(0, 120) : note);
       }
+    }
+
+    public static string BanGoodgame(string modId, string token, string room, string userId, int minutes, string reason, bool undo)
+    {
+      modId = modId == null ? "" : modId.Trim();
+      token = token == null ? "" : token.Trim();
+      userId = userId == null ? "" : userId.Trim();
+      if (modId.Length == 0 || token.Length == 0) return "GoodGame: нет id или токена помощника. Заткнула у себя.";
+      if (userId.Length == 0) return "GoodGame: не вижу id зрителя.";
+      try
+      {
+        string roomId = GgRoom(room);
+        if (roomId.Length == 0) return "GoodGame: не нашла канал.";
+        string auth = "{\"type\":\"auth\",\"data\":{\"user_id\":" + modId + ",\"token\":" + JsonConvert.ToString(token) + "}}";
+        string act = undo
+          ? "{\"type\":\"unban\",\"data\":{\"roomId\":" + JsonConvert.ToString(roomId) + ",\"userId\":" + userId + "}}"
+          : "{\"type\":\"ban2\",\"data\":{\"userId\":" + userId + ",\"roomId\":" + JsonConvert.ToString(roomId) + ",\"reason\":" + JsonConvert.ToString(reason == null ? "" : reason) + ",\"comment\":\"\",\"type\":" + (minutes <= 0 ? "2" : "0") + ",\"duration\":" + minutes.ToString(CultureInfo.InvariantCulture) + ",\"deleteMessage\":true}}";
+        using (ClientWebSocket socket = new ClientWebSocket())
+        {
+          CancellationTokenSource wait = new CancellationTokenSource(8000);
+          socket.ConnectAsync(new Uri("wss://chat-1.goodgame.ru/chat2/"), wait.Token).GetAwaiter().GetResult();
+          GgSend(socket, auth, wait.Token);
+          string answer = GgTake(socket, wait.Token);
+          if (answer.IndexOf("success_auth", StringComparison.Ordinal) < 0) return "GoodGame не пустил помощника.";
+          GgSend(socket, act, wait.Token);
+          string done = GgTake(socket, wait.Token);
+          if (done.IndexOf("error", StringComparison.Ordinal) >= 0) return "GoodGame не наказал: нет прав помощника.";
+        }
+        return undo ? "Сняла наказание на GoodGame." : (minutes <= 0 ? "Бан на GoodGame." : "Мут на GoodGame.");
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "ошибка" : ex.Message;
+        if (note.Length > 120) note = note.Substring(0, 120);
+        return "GoodGame: " + note;
+      }
+    }
+
+    static string GgRoom(string input)
+    {
+      if (input == null) return "";
+      string name = input.Trim();
+      name = Regex.Replace(name, "^https?://(?:www\\.)?goodgame\\.ru/", "", RegexOptions.IgnoreCase);
+      int cut = name.IndexOf('/');
+      if (cut >= 0) name = name.Substring(0, cut);
+      name = name.Trim();
+      if (name.Length == 0) return "";
+      if (Regex.IsMatch(name, "^\\d+$")) return name;
+      string raw = Net.GetText("https://goodgame.ru/api/4/users/" + Uri.EscapeDataString(name) + "/stream", CancellationToken.None).GetAwaiter().GetResult();
+      Dictionary<string, object> json = Net.Parse(raw);
+      return Net.S(Net.Get(json, "id"));
+    }
+
+    static void GgSend(ClientWebSocket socket, string text, CancellationToken ct)
+    {
+      byte[] bytes = Encoding.UTF8.GetBytes(text);
+      socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct).GetAwaiter().GetResult();
+    }
+
+    static string GgTake(ClientWebSocket socket, CancellationToken ct)
+    {
+      byte[] buf = new byte[8192];
+      StringBuilder text = new StringBuilder();
+      while (!ct.IsCancellationRequested)
+      {
+        WebSocketReceiveResult part = socket.ReceiveAsync(new ArraySegment<byte>(buf), ct).GetAwaiter().GetResult();
+        if (part.Count > 0) text.Append(Encoding.UTF8.GetString(buf, 0, part.Count));
+        if (part.EndOfMessage) break;
+      }
+      return text.ToString();
     }
 
     static string SendChat(string text, string token, string refresh, string client, string channel, string sender, bool allowRefresh)

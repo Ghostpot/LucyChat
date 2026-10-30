@@ -7264,19 +7264,18 @@ namespace Rech
       bool ban = spam || strikes >= 2;
       RememberMute(message.Author);
       string reason = ban ? "спам" : "запрещённые слова";
+      string who = message.Author == null ? "ты" : message.Author.Trim();
       if (message.Platform == "twitch")
       {
-        string nick = message.Author;
         string userId = message.UserId;
         int seconds = ban ? 0 : 600;
         ThreadPool.QueueUserWorkItem(delegate
         {
-          Rewards.BotStatus = Rewards.Punish(nick, userId, seconds, reason);
+          Rewards.BotStatus = Rewards.Punish(who, userId, seconds, reason);
         });
       }
-      if (lucyState != null) lucyState.Text = (ban ? "Бан " : "Мут 10 минут ") + message.Author + ". В ленте видно, вслух не читаю.";
-      string nick = message.Author == null ? "ты" : message.Author.Trim();
-      SayAsLucy("@" + nick + ", ты в наказании. Шанс есть. Умоляй меня, пресмыкайся и проси разбанить. Подумаю. Может, прощу.");
+      if (lucyState != null) lucyState.Text = (ban ? "Бан " : "Мут 10 минут ") + who + ". В ленте видно, вслух не читаю.";
+      SayAsLucy("@" + who + ", ты в наказании. Шанс есть. Умоляй меня, пресмыкайся и проси разбанить. Подумаю. Может, прощу.");
       return true;
     }
 

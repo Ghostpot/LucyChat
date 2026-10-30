@@ -126,11 +126,30 @@ namespace Rech
       Lat = new Regex("(?<![a-z])(?:nigg(?:er|a)s?|fagg?ots?|fags?|retards?|incels?|simps?|virgins?|cuck(?:old)?s?|whores?|sluts?|kys)(?![a-z])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     }
 
+    static string[] permit = new string[0];
+
+    public static void Permit(string raw)
+    {
+      List<string> list = new List<string>();
+      string[] parts = (raw == null ? "" : raw).Split(new char[] { '\n', '\r', ',', ';' });
+      int i;
+      for (i = 0; i < parts.Length; i++)
+      {
+        string word = parts[i].Trim().ToLowerInvariant().Replace('ё', 'е').Replace('Ё', 'е');
+        if (word.Length >= 2) list.Add(word);
+      }
+      permit = list.ToArray();
+    }
+
     public static string Apply(string text, bool on)
     {
       if (!on || text == null || text.Length == 0) return text == null ? "" : text;
-      string next = Rus.Replace(text, "пип");
+      List<string> kept = new List<string>();
+      string marked = Mark(text, kept);
+      string next = Rus.Replace(marked, "пип");
       next = Lat.Replace(next, "пип");
+      int i;
+      for (i = 0; i < kept.Count; i++) next = next.Replace("§" + i.ToString(CultureInfo.InvariantCulture) + "§", kept[i]);
       next = Regex.Replace(next, "(?:пип)(?:\\s+пип)+", "пип");
       return Regex.Replace(next, "\\s+", " ").Trim();
     }
@@ -138,7 +157,33 @@ namespace Rech
     public static bool Has(string text)
     {
       if (text == null || text.Length == 0) return false;
-      return Rus.IsMatch(text) || Lat.IsMatch(text);
+      string clean = Spare(text);
+      return Rus.IsMatch(clean) || Lat.IsMatch(clean);
+    }
+
+    static string Mark(string text, List<string> kept)
+    {
+      int i;
+      for (i = 0; i < permit.Length; i++)
+      {
+        string word = permit[i];
+        text = Regex.Replace(text, "(?i)(?<![а-яёa-z0-9])" + Regex.Escape(word) + "(?![а-яёa-z0-9])", delegate(Match match)
+        {
+          kept.Add(match.Value);
+          return "§" + (kept.Count - 1).ToString(CultureInfo.InvariantCulture) + "§";
+        });
+      }
+      return text;
+    }
+
+    static string Spare(string text)
+    {
+      int i;
+      for (i = 0; i < permit.Length; i++)
+      {
+        text = Regex.Replace(text, "(?i)(?<![а-яёa-z0-9])" + Regex.Escape(permit[i]) + "(?![а-яёa-z0-9])", " ");
+      }
+      return text;
     }
 
     static string Flex(string word)
@@ -443,6 +488,7 @@ namespace Rech
     public bool? ReadEnglish;
     public bool? ReadNumbers;
     public string MuteUsers;
+    public string AllowWords;
     public bool ShowPlatform;
     public bool ShowTime;
     public bool AlwaysOnTop;
@@ -5373,6 +5419,7 @@ namespace Rech
     Dictionary<string, string> audienceNow = new Dictionary<string, string>();
     System.Windows.Forms.Timer audienceTimer;
     TextBox muteBox;
+    TextBox allowBox;
     Label errorLabel;
     CheckBox topBox;
     CheckBox platformMarkBox;
@@ -5859,6 +5906,13 @@ namespace Rech
       swearBox = MakeCheck("Не читать ругань");
       swearBox.Checked = true;
       Place(right, swearBox, 14, ref y, 28);
+      Place(right, MakeMute("Можно. Эти слова не мутят и читаются"), 14, ref y, 18);
+      allowBox = new TextBox();
+      StyleBox(allowBox);
+      allowBox.Multiline = true;
+      allowBox.ScrollBars = ScrollBars.Vertical;
+      allowBox.Text = "бля\r\nблять\r\nблядь";
+      Place(right, allowBox, 14, ref y, 72);
       englishBox = MakeCheck("Читать английский");
       Place(right, englishBox, 14, ref y, 28);
       numberBox = MakeCheck("Читать цифры");
@@ -6258,6 +6312,12 @@ namespace Rech
         RebuildVisible();
         SaveSettings();
       };
+      if (allowBox != null) allowBox.TextChanged += delegate
+      {
+        if (loading) return;
+        Swear.Permit(allowBox.Text);
+        SaveSettings();
+      };
       topBox.CheckedChanged += save;
       platformMarkBox.CheckedChanged += save;
       timeBox.CheckedChanged += save;
@@ -6478,6 +6538,11 @@ namespace Rech
       sileroOutputs.Text = settings.SileroOutputs == null ? "" : settings.SileroOutputs;
       sileroBox.SelectedIndex = SileroIndex(settings.SileroSpeaker);
       muteBox.Text = settings.MuteUsers == null ? "" : settings.MuteUsers;
+      if (allowBox != null)
+      {
+        allowBox.Text = settings.AllowWords == null ? "бля\r\nблять\r\nблядь" : settings.AllowWords;
+        Swear.Permit(allowBox.Text);
+      }
       if (delayBox != null) delayBox.Value = Math.Max(0, Math.Min(30, settings.SpeechDelay));
       if (nickBox != null) nickBox.Text = settings.NickMap == null ? "" : settings.NickMap;
       if (pauseKeyBox != null) pauseKeyBox.Checked = settings.PauseHotkeyOn ?? true;
@@ -8165,6 +8230,7 @@ namespace Rech
       settings.PauseHotkey = pauseMod.ToString(CultureInfo.InvariantCulture) + ":" + ((int)pauseKey).ToString(CultureInfo.InvariantCulture);
       settings.PauseHotkeyOn = pauseKeyBox.Checked;
       settings.MuteUsers = muteBox.Text;
+      settings.AllowWords = allowBox == null ? "бля\r\nблять\r\nблядь" : allowBox.Text;
       settings.ShowPlatform = platformMarkBox.Checked;
       settings.ShowTime = timeBox.Checked;
       settings.AlwaysOnTop = topBox.Checked;

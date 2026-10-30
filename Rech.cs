@@ -3147,6 +3147,7 @@ namespace Rech
     public static string Joke = "";
     public static string Mad = "";
     public static string File = "";
+    public static string Miss = "";
     public static int Token;
     public static long Until;
     static byte[] bytes;
@@ -3159,25 +3160,38 @@ namespace Rech
 
     public static void Show(string answer)
     {
+      Miss = "";
       if (!On || answer == null || answer.Length == 0)
       {
         File = "";
+        if (!On) Miss = "Галочка лица выключена.";
         return;
       }
       string low = answer.ToLowerInvariant();
       string path = Talk;
       if (low.Contains("дура") || low.Contains("затк") || low.Contains("беси") || low.Contains("злю") || low.Contains("хватит") || low.Contains("нагл")) path = Mad;
       else if (low.Contains("аха") || low.Contains("хах") || low.Contains("хех") || low.Contains("смеш") || low.Contains("шут")) path = Joke;
-      path = Resolve(path);
-      if (path.Length == 0) path = Resolve(Talk);
+      path = FirstClip(path, Talk, Joke, Mad, "azeroth/talk.mp4", "zomboid/talk.mp4");
       if (path.Length == 0)
       {
         File = "";
+        Miss = "Ролика нет. Для мира " + (World == null ? "" : World) + " положи talk.mp4 в папку faces или укажи файл кнопкой.";
         return;
       }
       File = path;
       Token = Token + 1;
-      Until = OverlayHub.NowMs() + 8000;
+      Until = OverlayHub.NowMs() + 15000;
+    }
+
+    static string FirstClip(params string[] paths)
+    {
+      int i;
+      for (i = 0; i < paths.Length; i++)
+      {
+        string found = Resolve(paths[i]);
+        if (found.Length > 0) return found;
+      }
+      return "";
     }
 
     public static int FaceToken()
@@ -5690,7 +5704,7 @@ namespace Rech
         LucyStage.On = true;
         LucyStage.Show("привет");
         LucyStage.On = was;
-        if (lucyState != null) lucyState.Text = LucyStage.File != null && LucyStage.File.Length > 0 ? "Лицо на ссылке выше. Эфир не нужен." : "Ролика нет. Положи talk.mp4 в папку faces или укажи файл.";
+        if (lucyState != null) lucyState.Text = LucyStage.File != null && LucyStage.File.Length > 0 ? "Лицо на ссылке выше. Эфир не нужен." : (LucyStage.Miss.Length > 0 ? LucyStage.Miss : "Ролика нет.");
       };
       Place(right, tryFace, 14, ref y, 32);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
@@ -7220,7 +7234,9 @@ namespace Rech
               return;
             }
             if (lucyState != null) lucyState.Text = posted.Length > 0 ? posted : "Люси написала в чат Twitch.";
+            ApplyLucyStage();
             LucyStage.Show(say);
+            if (lucyState != null && LucyStage.Miss != null && LucyStage.Miss.Length > 0) lucyState.Text = lucyState.Text + " " + LucyStage.Miss;
             ChatMessage reply = new ChatMessage();
             reply.Id = "lucy:" + Guid.NewGuid().ToString("N");
             reply.Platform = "lucy";
@@ -10771,10 +10787,9 @@ namespace Rech
         }
         else if (path == "/face")
         {
-          byte[] clip = LucyStage.Bytes();
-          if (clip == null) clip = new byte[0];
-          body = clip;
-          type = "video/mp4";
+          client.SendTimeout = 120000;
+          WriteFace(stream, request, LucyStage.Bytes(), LucyStage.File);
+          return;
         }
         else if (path == "/feed")
         {
@@ -10814,6 +10829,43 @@ namespace Rech
       {
         try { client.Close(); } catch { }
       }
+    }
+
+    void WriteFace(NetworkStream stream, string request, byte[] clip, string file)
+    {
+      if (clip == null) clip = new byte[0];
+      string mime = file != null && file.EndsWith(".webm", StringComparison.OrdinalIgnoreCase) ? "video/webm" : "video/mp4";
+      int start = 0;
+      int last = clip.Length == 0 ? 0 : clip.Length - 1;
+      bool partial = false;
+      Match range = Regex.Match(request == null ? "" : request, "Range:\\s*bytes=(\\d+)-(\\d*)", RegexOptions.IgnoreCase);
+      if (range.Success && clip.Length > 0)
+      {
+        partial = true;
+        int.TryParse(range.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out start);
+        if (range.Groups[2].Value.Length > 0) int.TryParse(range.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out last);
+        if (start < 0) start = 0;
+        if (last >= clip.Length) last = clip.Length - 1;
+        if (start > last || start >= clip.Length)
+        {
+          byte[] bad = Encoding.ASCII.GetBytes("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+          stream.Write(bad, 0, bad.Length);
+          return;
+        }
+      }
+      int count = clip.Length == 0 ? 0 : (partial ? last - start + 1 : clip.Length);
+      if (!partial) start = 0;
+      StringBuilder header = new StringBuilder();
+      header.Append(partial ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n");
+      header.Append("Content-Type: ").Append(mime).Append("\r\n");
+      header.Append("Accept-Ranges: bytes\r\n");
+      header.Append("Content-Length: ").Append(count.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+      if (partial) header.Append("Content-Range: bytes ").Append(start.ToString(CultureInfo.InvariantCulture)).Append("-").Append(last.ToString(CultureInfo.InvariantCulture)).Append("/").Append(clip.Length.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+      header.Append("Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n");
+      byte[] head = Encoding.ASCII.GetBytes(header.ToString());
+      stream.Write(head, 0, head.Length);
+      if (count > 0) stream.Write(clip, start, count);
+      stream.Flush();
     }
 
     static string PlayerPage()
@@ -10929,14 +10981,14 @@ namespace Rech
         + "</style></head><body><canvas id='face' width='480' height='600'></canvas><video id='vid' muted playsinline></video><script>"
         + "var faceToken=0;var faceRun=0;"
         + "function showFace(token){var canvas=document.getElementById('face');var vid=document.getElementById('vid');"
-        + "if(!token){faceToken=0;canvas.style.display='none';try{vid.pause();}catch(e){}return;}"
-        + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;vid.muted=true;vid.volume=0;vid.src='/face?t='+token;"
+        + "if(!token){if(!faceToken)return;faceToken=0;faceRun++;canvas.style.display='none';try{vid.pause();}catch(e){}return;}"
+        + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;vid.muted=true;vid.defaultMuted=true;vid.volume=0;vid.loop=true;vid.src='/face?t='+token;"
         + "var ctx=canvas.getContext('2d',{willReadFrequently:true});"
-        + "function frame(){if(run!==faceRun)return;if(vid.ended||(vid.paused&&vid.readyState>2)){canvas.style.display='none';return;}"
-        + "if(vid.videoWidth){canvas.style.display='block';ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
-        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>70&&g>r*1.3&&g>b*1.3){var spill=g-Math.max(r,b);d[p+3]=spill>50?0:Math.max(0,255-spill*5);}}"
+        + "function frame(){if(run!==faceRun)return;if(vid.videoWidth){canvas.style.display='block';ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
+        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>80&&g>r+35&&g>b+35){var spill=g-Math.max(r,b);d[p+3]=spill>60?0:Math.max(0,255-spill*4);}}"
         + "ctx.putImageData(img,0,0);}requestAnimationFrame(frame);}"
-        + "vid.onended=function(){canvas.style.display='none';};vid.play().catch(function(){});requestAnimationFrame(frame);}"
+        + "function kick(){vid.play().catch(function(){});}"
+        + "vid.onloadeddata=kick;vid.oncanplay=kick;kick();requestAnimationFrame(frame);}"
         + "function tick(){var x=new XMLHttpRequest();x.open('GET','/feed?t='+Date.now(),true);"
         + "x.onload=function(){if(x.status!=200)return;try{var data=JSON.parse(x.responseText);showFace(data.face||0);}catch(e){}};"
         + "x.send();}"

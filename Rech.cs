@@ -5882,11 +5882,12 @@ namespace Rech
       Place(right, MakeMute("Куда Люси отправит смотреть картинку"), 14, ref y, 18);
       maxLinkBox = new TextBox();
       StyleBox(maxLinkBox);
-      maxLinkBox.Text = "https://t.me/Ghostpot_img_bot";
+      maxLinkBox.Text = "https://t.me/ghostpot_chat";
       Place(right, maxLinkBox, 14, ref y, 28);
       Place(right, MakeMute("Чат Telegram: @канал или номер. Кнопка найдёт сама"), 14, ref y, 18);
       maxChatBox = new TextBox();
       StyleBox(maxChatBox);
+      maxChatBox.Text = "@ghostpot_chat";
       Place(right, maxChatBox, 14, ref y, 28);
       Place(right, MakeMute("Токен бота из BotFather. В чат его не пиши"), 14, ref y, 18);
       maxTokenBox = new TextBox();
@@ -6584,13 +6585,13 @@ namespace Rech
       if (maxLinkBox != null)
       {
         string link = settings.MaxLink == null ? "" : settings.MaxLink.Trim();
-        if (link.Length == 0 || link.IndexOf("max.ru", StringComparison.OrdinalIgnoreCase) >= 0) link = "https://t.me/Ghostpot_img_bot";
+        if (link.Length == 0 || link.IndexOf("max.ru", StringComparison.OrdinalIgnoreCase) >= 0 || link.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0) link = "https://t.me/ghostpot_chat";
         maxLinkBox.Text = link;
       }
       if (maxChatBox != null)
       {
         string chat = settings.MaxChat == null ? "" : settings.MaxChat.Trim();
-        if (chat == "72384283996371") chat = "";
+        if (chat.Length == 0 || chat == "72384283996371" || chat.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0) chat = "@ghostpot_chat";
         maxChatBox.Text = chat;
       }
       if (maxTokenBox != null)
@@ -8463,8 +8464,8 @@ namespace Rech
       prefs.SongTitle = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       prefs.LucyTitle = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       prefs.PictureTitle = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
-      prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/Ghostpot_img_bot" : maxLinkBox.Text.Trim();
-      prefs.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
+      prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : maxLinkBox.Text.Trim();
+      prefs.MaxChat = maxChatBox == null || maxChatBox.Text.Trim().Length == 0 ? "@ghostpot_chat" : maxChatBox.Text.Trim();
       prefs.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       int seconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds);
@@ -8657,8 +8658,8 @@ namespace Rech
       settings.SongReward = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       settings.LucyReward = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       settings.PictureReward = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
-      settings.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/Ghostpot_img_bot" : maxLinkBox.Text.Trim();
-      settings.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
+      settings.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : maxLinkBox.Text.Trim();
+      settings.MaxChat = maxChatBox == null || maxChatBox.Text.Trim().Length == 0 ? "@ghostpot_chat" : maxChatBox.Text.Trim();
       settings.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       int songSeconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out songSeconds);
@@ -11312,10 +11313,11 @@ namespace Rech
         if (painted.Count > 80) painted.Clear();
       }
       Hide(prompt);
-      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://t.me/Ghostpot_img_bot" : current.MaxLink.Trim();
-      string chat = current.MaxChat == null ? "" : current.MaxChat.Trim();
+      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : current.MaxLink.Trim();
+      string chat = current.MaxChat == null || current.MaxChat.Trim().Length == 0 ? "@ghostpot_chat" : current.MaxChat.Trim();
       string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
-      if (chat == "72384283996371") chat = "";
+      if (chat == "72384283996371" || chat.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0) chat = "@ghostpot_chat";
+      if (link.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0 || link.IndexOf("max.ru", StringComparison.OrdinalIgnoreCase) >= 0) link = "https://t.me/ghostpot_chat";
       if (token.IndexOf(':') < 0) token = "";
       if (chat.Length == 0 || token.Length == 0)
       {

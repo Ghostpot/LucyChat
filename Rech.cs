@@ -11020,7 +11020,9 @@ namespace Rech
             if (type == "notification")
             {
               JToken ev = root.SelectToken("payload.event");
-              if (ev != null) Accept(current, ev);
+              RewardPrefs fresh;
+              lock (gate) fresh = prefs;
+              if (ev != null) Accept(fresh == null ? current : fresh, ev);
             }
           }
         }
@@ -11318,11 +11320,16 @@ namespace Rech
       string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
       if (chat == "72384283996371" || chat.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0) chat = "@ghostpot_chat";
       if (link.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0 || link.IndexOf("max.ru", StringComparison.OrdinalIgnoreCase) >= 0) link = "https://t.me/ghostpot_chat";
-      if (token.IndexOf(':') < 0) token = "";
-      if (chat.Length == 0 || token.Length == 0)
+      if (token.IndexOf(':') < 0)
       {
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Картинку некуда выложить. Вставь токен бота и нажми «Найти чат Telegram».", false);
+        Tell("Люси", "В поле токена нет ключа бота. Вставь ключ из BotFather для @Ghostpot_img_bot.", false);
+        return;
+      }
+      if (chat.Length == 0)
+      {
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", "Не написан чат. Должно быть @ghostpot_chat.", false);
         return;
       }
       if (!Pictures.Take(user))
@@ -11436,6 +11443,11 @@ namespace Rech
       {
         string note = ex.Message == null ? "" : ex.Message;
         if (token != null && token.Length > 0) note = note.Replace(token, "token");
+        string low = note.ToLowerInvariant();
+        if (low.IndexOf("chat not found", StringComparison.Ordinal) >= 0 || low.IndexOf("bot is not a member", StringComparison.Ordinal) >= 0)
+          note = "бот не в чате. Админом должен быть @Ghostpot_img_bot, не Ghostpot_bot.";
+        else if (low.IndexOf("not enough rights", StringComparison.Ordinal) >= 0 || low.IndexOf("have no rights", StringComparison.Ordinal) >= 0)
+          note = "у @Ghostpot_img_bot нет права писать в чат.";
         throw new Exception("Telegram не принял картинку. " + note);
       }
     }

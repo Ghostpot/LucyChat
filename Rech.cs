@@ -11390,17 +11390,117 @@ namespace Rech
 
     static byte[] DrawPicture(string prompt)
     {
-      string url = "https://image.pollinations.ai/prompt/" + Uri.EscapeDataString(prompt) + "?width=768&height=768&nologo=true&model=flux&seed=" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture);
-      using (HttpClient client = new HttpClient())
+      string english = ToEnglish(prompt);
+      if (english.Length == 0) english = prompt;
+      if (!string.Equals(english, prompt, StringComparison.Ordinal)) Tell("Люси", "Рисую так: " + english, false);
+      byte[] fast = TryPollinations(english);
+      if (fast != null) return fast;
+      Tell("Люси", "Быстрый рисовальщик занят. Рисую в бесплатной очереди, это минута.", false);
+      return TryHorde(english);
+    }
+
+    static string ToEnglish(string prompt)
+    {
+      if (prompt == null) return "";
+      int cyr = 0;
+      int latin = 0;
+      foreach (char c in prompt)
       {
-        client.Timeout = TimeSpan.FromSeconds(90);
-        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "LucyChat");
-        byte[] bytes = client.GetByteArrayAsync(url).GetAwaiter().GetResult();
-        if (bytes == null || bytes.Length < 800) return null;
-        if (bytes[0] == 0xFF && bytes[1] == 0xD8) return bytes;
-        if (bytes[0] == 0x89 && bytes[1] == 0x50) return bytes;
-        return null;
+        if (c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я' || c == 'ё' || c == 'Ё') cyr++;
+        else if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') latin++;
       }
+      if (cyr == 0 || latin > cyr) return prompt.Trim();
+      try
+      {
+        string url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=ru&tl=en&dt=t&q=" + Uri.EscapeDataString(prompt);
+        using (HttpClient client = new HttpClient())
+        {
+          client.Timeout = TimeSpan.FromSeconds(20);
+          client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
+          string json = client.GetStringAsync(url).GetAwaiter().GetResult();
+          JArray root = JArray.Parse(json);
+          JArray parts = root[0] as JArray;
+          StringBuilder line = new StringBuilder();
+          if (parts != null)
+          {
+            int i;
+            for (i = 0; i < parts.Count; i++)
+            {
+              JArray bit = parts[i] as JArray;
+              if (bit != null && bit.Count > 0 && bit[0] != null) line.Append(bit[0].ToString());
+            }
+          }
+          string done = line.ToString().Trim();
+          if (done.Length > 1) return done;
+        }
+      }
+      catch
+      {
+      }
+      return prompt.Trim();
+    }
+
+    static byte[] TryPollinations(string prompt)
+    {
+      string[] models = new string[] { "flux", "turbo" };
+      int i;
+      for (i = 0; i < models.Length; i++)
+      {
+        try
+        {
+          string url = "https://image.pollinations.ai/prompt/" + Uri.EscapeDataString(prompt) + "?width=768&height=768&nologo=true&model=" + models[i] + "&seed=" + (DateTime.UtcNow.Ticks % 1000000).ToString(CultureInfo.InvariantCulture);
+          using (HttpClient client = new HttpClient())
+          {
+            client.Timeout = TimeSpan.FromSeconds(70);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "LucyChat");
+            HttpResponseMessage res = client.GetAsync(url).GetAwaiter().GetResult();
+            int code = (int)res.StatusCode;
+            byte[] bytes = code >= 200 && code < 300 ? res.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult() : null;
+            res.Dispose();
+            if (bytes != null && bytes.Length > 8000 && ((bytes[0] == 0xFF && bytes[1] == 0xD8) || (bytes[0] == 0x89 && bytes[1] == 0x50))) return bytes;
+          }
+        }
+        catch
+        {
+        }
+      }
+      return null;
+    }
+
+    static byte[] TryHorde(string prompt)
+    {
+      string body = "{\"prompt\":" + JsonConvert.ToString(prompt + ", fantasy character") + ",\"params\":{\"width\":768,\"height\":768,\"steps\":8,\"n\":1},\"nsfw\":false,\"censor_nsfw\":true,\"r2\":true,\"models\":[\"SDXL 1.0\"]}";
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, "https://stablehorde.net/api/v2/generate/async");
+      req.Headers.TryAddWithoutValidation("apikey", "0000000000");
+      req.Headers.TryAddWithoutValidation("Client-Agent", "LucyChat:1.7.31:ghostpot");
+      req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+      JObject started = JObject.Parse(Send(req));
+      string id = (string)started["id"];
+      if (id == null || id.Length == 0) return null;
+      int i;
+      for (i = 0; i < 24; i++)
+      {
+        Thread.Sleep(5000);
+        HttpRequestMessage check = new HttpRequestMessage(HttpMethod.Get, "https://stablehorde.net/api/v2/generate/status/" + id);
+        check.Headers.TryAddWithoutValidation("Client-Agent", "LucyChat:1.7.31:ghostpot");
+        JObject status = JObject.Parse(Send(check));
+        if (status["faulted"] != null && (bool)status["faulted"]) return null;
+        if (status["done"] == null || !(bool)status["done"]) continue;
+        JArray gens = status["generations"] as JArray;
+        if (gens == null || gens.Count == 0) return null;
+        string img = (string)gens[0]["img"];
+        if (img == null || img.Length == 0) return null;
+        if (img.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+          using (HttpClient client = new HttpClient())
+          {
+            client.Timeout = TimeSpan.FromSeconds(60);
+            return client.GetByteArrayAsync(img).GetAwaiter().GetResult();
+          }
+        }
+        return Convert.FromBase64String(img);
+      }
+      return null;
     }
 
     static string PhotoToken(JObject obj, out JToken photos)

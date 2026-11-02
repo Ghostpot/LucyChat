@@ -11130,7 +11130,7 @@ namespace Rech
       return child && sex;
     }
 
-    static readonly Dictionary<string, string> lastLine = new Dictionary<string, string>();
+    static readonly Dictionary<string, string> lastPrompt = new Dictionary<string, string>();
     static readonly Dictionary<string, long> painted = new Dictionary<string, long>();
 
     public static void Note(string author, string text)
@@ -11139,7 +11139,7 @@ namespace Rech
       string key = author.Trim().ToLowerInvariant();
       string line = Regex.Replace(text, "\\s+", " ").Trim();
       if (key.Length == 0 || line.Length < 2 || IsPicture(line)) return;
-      lock (gate) lastLine[key] = line;
+      lock (gate) lastPrompt[key] = line;
     }
 
     public static bool IsPicture(string text)
@@ -11177,7 +11177,7 @@ namespace Rech
         lock (gate)
         {
           string last;
-          if (key.Length > 0 && lastLine.TryGetValue(key, out last)) rest = last;
+          if (key.Length > 0 && lastPrompt.TryGetValue(key, out last)) rest = last;
         }
       }
       if (rest == null) return "";

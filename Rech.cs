@@ -570,8 +570,6 @@ namespace Rech
     public string SongReward;
     public string LucyReward;
     public string PictureReward;
-    public string PictureEngine;
-    public string GrokKey;
     public string MaxLink;
     public string MaxChat;
     public string MaxToken;
@@ -5427,8 +5425,6 @@ namespace Rech
     TextBox songRewardBox;
     TextBox lucyRewardBox;
     TextBox picRewardBox;
-    ComboBox picEngineBox;
-    TextBox grokKeyBox;
     TextBox maxLinkBox;
     TextBox maxChatBox;
     TextBox maxTokenBox;
@@ -5883,15 +5879,6 @@ namespace Rech
       StyleBox(picRewardBox);
       picRewardBox.Text = "Картинка";
       Place(right, picRewardBox, 14, ref y, 28);
-      Place(right, MakeMute("Кто рисует. Бесплатно — без ключа. Grok — ключ с console.x.ai"), 14, ref y, 18);
-      picEngineBox = new ComboBox();
-      picEngineBox.DropDownStyle = ComboBoxStyle.DropDownList;
-      picEngineBox.Items.AddRange(new object[] { "Бесплатно", "Grok" });
-      picEngineBox.SelectedIndex = 0;
-      Place(right, picEngineBox, 14, ref y, 28);
-      grokKeyBox = new TextBox();
-      StyleBox(grokKeyBox);
-      Place(right, grokKeyBox, 14, ref y, 28);
       Place(right, MakeMute("Адрес группы MAX. Люси говорит только его"), 14, ref y, 18);
       maxLinkBox = new TextBox();
       StyleBox(maxLinkBox);
@@ -6381,8 +6368,6 @@ namespace Rech
       if (songRewardBox != null) songRewardBox.TextChanged += save;
       if (lucyRewardBox != null) lucyRewardBox.TextChanged += save;
       if (picRewardBox != null) picRewardBox.TextChanged += save;
-      if (picEngineBox != null) picEngineBox.SelectedIndexChanged += delegate { save(null, EventArgs.Empty); };
-      if (grokKeyBox != null) grokKeyBox.TextChanged += save;
       if (maxLinkBox != null) maxLinkBox.TextChanged += save;
       if (maxChatBox != null) maxChatBox.TextChanged += save;
       if (maxTokenBox != null) maxTokenBox.TextChanged += save;
@@ -6595,8 +6580,6 @@ namespace Rech
       if (songRewardBox != null) songRewardBox.Text = settings.SongReward == null || settings.SongReward.Length == 0 ? "Заказать песню" : settings.SongReward;
       if (lucyRewardBox != null) lucyRewardBox.Text = settings.LucyReward == null || settings.LucyReward.Length == 0 ? "Поговорить с Люси" : settings.LucyReward;
       if (picRewardBox != null) picRewardBox.Text = settings.PictureReward == null || settings.PictureReward.Length == 0 ? "Картинка" : settings.PictureReward;
-      if (picEngineBox != null) picEngineBox.SelectedIndex = settings.PictureEngine != null && settings.PictureEngine.IndexOf("grok", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 0;
-      if (grokKeyBox != null) grokKeyBox.Text = settings.GrokKey == null ? "" : settings.GrokKey;
       if (maxLinkBox != null) maxLinkBox.Text = settings.MaxLink == null || settings.MaxLink.Length == 0 ? "https://max.ru/channel_Ghostpot" : settings.MaxLink;
       if (maxChatBox != null) maxChatBox.Text = settings.MaxChat == null ? "" : settings.MaxChat;
       if (maxTokenBox != null) maxTokenBox.Text = settings.MaxToken == null ? "" : settings.MaxToken;
@@ -8395,8 +8378,6 @@ namespace Rech
       prefs.SongTitle = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       prefs.LucyTitle = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       prefs.PictureTitle = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
-      prefs.PictureEngine = picEngineBox != null && picEngineBox.SelectedIndex == 1 ? "grok" : "free";
-      prefs.GrokKey = grokKeyBox == null ? "" : grokKeyBox.Text.Trim();
       prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
       prefs.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
       prefs.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
@@ -8591,8 +8572,6 @@ namespace Rech
       settings.SongReward = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       settings.LucyReward = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       settings.PictureReward = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
-      settings.PictureEngine = picEngineBox != null && picEngineBox.SelectedIndex == 1 ? "grok" : "free";
-      settings.GrokKey = grokKeyBox == null ? "" : grokKeyBox.Text.Trim();
       settings.MaxLink = maxLinkBox == null ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
       settings.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
       settings.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
@@ -10147,8 +10126,6 @@ namespace Rech
     public string SongTitle;
     public string LucyTitle;
     public string PictureTitle;
-    public string PictureEngine;
-    public string GrokKey;
     public string MaxLink;
     public string MaxChat;
     public string MaxToken;
@@ -11316,17 +11293,6 @@ namespace Rech
 
     static byte[] DrawPicture(string prompt)
     {
-      string engine = "";
-      string key = "";
-      lock (gate)
-      {
-        if (prefs != null)
-        {
-          engine = prefs.PictureEngine == null ? "" : prefs.PictureEngine;
-          key = prefs.GrokKey == null ? "" : prefs.GrokKey;
-        }
-      }
-      if (engine.IndexOf("grok", StringComparison.OrdinalIgnoreCase) >= 0) return DrawGrok(prompt, key);
       string url = "https://image.pollinations.ai/prompt/" + Uri.EscapeDataString(prompt) + "?width=768&height=768&nologo=true&model=flux&seed=" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture);
       using (HttpClient client = new HttpClient())
       {
@@ -11337,34 +11303,6 @@ namespace Rech
         if (bytes[0] == 0xFF && bytes[1] == 0xD8) return bytes;
         if (bytes[0] == 0x89 && bytes[1] == 0x50) return bytes;
         return null;
-      }
-    }
-
-    static byte[] DrawGrok(string prompt, string key)
-    {
-      if (key == null || key.Trim().Length < 10) throw new Exception("Нет ключа Grok. Его берут на console.x.ai");
-      string body = "{\"model\":\"grok-imagine-image-2.0\",\"prompt\":" + JsonConvert.ToString(prompt) + ",\"quality\":\"low\",\"response_format\":\"b64_json\"}";
-      using (HttpClient client = new HttpClient())
-      {
-        client.Timeout = TimeSpan.FromSeconds(90);
-        HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, "https://api.x.ai/v1/images/generations");
-        req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key.Trim());
-        req.Content = new StringContent(body, Encoding.UTF8, "application/json");
-        HttpResponseMessage res = client.Send(req);
-        string json = res.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-        int code = (int)res.StatusCode;
-        res.Dispose();
-        if (code < 200 || code >= 300) throw new Exception("Grok " + code.ToString(CultureInfo.InvariantCulture));
-        JObject root = JObject.Parse(json);
-        string b64 = (string)root.SelectToken("data[0].b64_json");
-        if (b64 != null && b64.Length > 0) return Convert.FromBase64String(b64);
-        string url = (string)root.SelectToken("data[0].url");
-        if (url == null || url.Length == 0) throw new Exception("Grok не отдал картинку");
-        using (HttpClient fetch = new HttpClient())
-        {
-          fetch.Timeout = TimeSpan.FromSeconds(60);
-          return fetch.GetByteArrayAsync(url).GetAwaiter().GetResult();
-        }
       }
     }
 

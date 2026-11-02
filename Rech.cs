@@ -102,6 +102,7 @@ namespace Rech
     public bool Fresh;
     public string Icons;
     public string UserId;
+    public bool Reward;
   }
 
   static class Swear
@@ -1087,6 +1088,7 @@ namespace Rech
             message.Icons = icons;
             message.Ts = Net.ToMs(parsed.Tag("tmi-sent-ts"));
             message.Fresh = true;
+            message.Reward = parsed.Tag("custom-reward-id").Length > 0;
             EmitMessage(gen, message);
           }
         }
@@ -7209,7 +7211,10 @@ namespace Rech
       }
       else if (message.Fresh && Moderate(message)) quiet = true;
       if (Rewards.Hides(message.Text)) quiet = true;
+      if (message.Reward || Rewards.IsPicture(message.Text)) quiet = true;
       if (Rewards.Echo(message.Author, message.Text, message.Platform)) return;
+      bool picturePay = Rewards.IsPicture(message.Text);
+      string picturePrompt = picturePay ? Rewards.PicturePrompt(message.Author, message.Text) : "";
       Row row = new Row();
       row.Mark = PlatformMark(message.Platform);
       row.Platform = message.Platform;
@@ -7228,7 +7233,12 @@ namespace Rech
         downButton.Visible = true;
         downButton.BringToFront();
       }
-      Room.Hear(row.Author, row.Text);
+      if (!picturePay && !message.Reward)
+      {
+        Room.Hear(row.Author, row.Text);
+        Rewards.Note(message.Author, message.Text);
+      }
+      if (message.Fresh && picturePrompt != null && picturePrompt.Length > 1) Rewards.Paint(message.Author, picturePrompt);
       if (message.Fresh && !quiet) SpeakLater(message);
       if (message.Fresh && !quiet && !mercy) ConsiderLucy(message);
     }
@@ -11108,50 +11118,7 @@ namespace Rech
         Tell("Люси", user + ", такое рисовать не буду.", true);
         return;
       }
-      if (!Pictures.Take(user))
-      {
-        Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", user + ", на этот ник уже три картинки.", true);
-        return;
-      }
-      Hide(prompt);
-      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : current.MaxLink.Trim();
-      string chat = current.MaxChat == null ? "" : current.MaxChat.Trim();
-      string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
-      if (chat.Length == 0 || token.Length == 0)
-      {
-        long found = MaxPage.Channel(link);
-        if (found != 0) chat = found.ToString(CultureInfo.InvariantCulture);
-      }
-      if (chat.Length == 0 || token.Length == 0)
-      {
-        Pictures.GiveBack(user);
-        Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Картинку некуда выложить: нет канала или ключа бота MAX.", true);
-        return;
-      }
-      string nick = user;
-      string chatId = chat;
-      Tell("Люси", nick + ", картинку выложу сюда: " + link, true);
-      Thread draw = new Thread(delegate()
-      {
-        try
-        {
-          byte[] jpg = DrawPicture(prompt);
-          if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
-          PostMax(token, chatId, nick, jpg);
-          Tell("Люси", nick + ", картинку выложила сюда: " + link, true);
-        }
-        catch
-        {
-          Pictures.GiveBack(nick);
-          Cancel(current, broadcaster, rewardId, redemption);
-          Tell("Люси", nick + ", картинка не вышла. Баллы верну.", true);
-        }
-      });
-      draw.IsBackground = true;
-      draw.Name = "LucyPicture";
-      draw.Start();
+      Paint(user, prompt, current, broadcaster, rewardId, redemption);
     }
 
     static bool RoughPicture(string text)
@@ -11161,6 +11128,126 @@ namespace Rech
       bool child = low.Contains("ребен") || low.Contains("ребён") || low.Contains("школьниц") || low.Contains("малолет") || low.Contains("несовершеннолет") || low.Contains("child") || low.Contains("loli") || low.Contains("лоли") || low.Contains("underage");
       bool sex = low.Contains("секс") || low.Contains("голая") || low.Contains("голый") || low.Contains("nude") || low.Contains("porn") || low.Contains("nsfw") || low.Contains("трах") || low.Contains("эротик");
       return child && sex;
+    }
+
+    static readonly Dictionary<string, string> lastLine = new Dictionary<string, string>();
+    static readonly Dictionary<string, long> painted = new Dictionary<string, long>();
+
+    public static void Note(string author, string text)
+    {
+      if (author == null || text == null) return;
+      string key = author.Trim().ToLowerInvariant();
+      string line = Regex.Replace(text, "\\s+", " ").Trim();
+      if (key.Length == 0 || line.Length < 2 || IsPicture(line)) return;
+      lock (gate) lastLine[key] = line;
+    }
+
+    public static bool IsPicture(string text)
+    {
+      if (text == null) return false;
+      string flat = Regex.Replace(text, "\\s+", " ").Trim();
+      if (flat.Length == 0) return false;
+      string title;
+      lock (gate) title = prefs.PictureTitle;
+      if (title == null || title.Trim().Length < 3) title = "Картинка";
+      title = title.Trim();
+      if (flat.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+      bool money = Regex.IsMatch(flat, "\\d[\\d\\s\\u00a0]*\\s*(usd|rub|eur|₽|\\$)", RegexOptions.IgnoreCase);
+      if (!money) return false;
+      return flat.IndexOf("генерац", StringComparison.OrdinalIgnoreCase) >= 0 || flat.IndexOf("картинк", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    public static string PicturePrompt(string author, string text)
+    {
+      string flat = Regex.Replace(text == null ? "" : text, "\\s+", " ").Trim();
+      string stripped = Regex.Replace(flat, "^[\\d\\s\\u00a0]+(?:usd|rub|eur|₽|\\$)?\\.?\\s*", "", RegexOptions.IgnoreCase).Trim();
+      string title;
+      lock (gate) title = prefs.PictureTitle;
+      if (title == null || title.Trim().Length < 3) title = "Картинка";
+      title = title.Trim();
+      string rest = stripped;
+      int at = rest.IndexOf(title, StringComparison.OrdinalIgnoreCase);
+      if (at >= 0) rest = (rest.Substring(0, at) + " " + rest.Substring(at + title.Length)).Trim();
+      rest = Regex.Replace(rest, "^(usd|rub|eur)\\.?\\s*", "", RegexOptions.IgnoreCase).Trim(' ', '.', ':', '-');
+      bool onlyTitle = rest.Length < 2 || string.Equals(rest, title, StringComparison.OrdinalIgnoreCase) || Regex.IsMatch(rest, "^(твоя\\s+)?(генерация|картинка)$", RegexOptions.IgnoreCase);
+      if (onlyTitle)
+      {
+        string key = author == null ? "" : author.Trim().ToLowerInvariant();
+        rest = "";
+        lock (gate)
+        {
+          string last;
+          if (key.Length > 0 && lastLine.TryGetValue(key, out last)) rest = last;
+        }
+      }
+      if (rest == null) return "";
+      if (rest.Length > 240) rest = rest.Substring(0, 240);
+      if (IsPicture(rest)) return "";
+      return rest.Trim();
+    }
+
+    public static void Paint(string user, string prompt)
+    {
+      RewardPrefs current;
+      lock (gate) current = prefs;
+      if (current == null) return;
+      Paint(user, prompt, current, null, null, null);
+    }
+
+    static void Paint(string user, string prompt, RewardPrefs current, string broadcaster, string rewardId, string redemption)
+    {
+      string key = (user == null ? "" : user.Trim().ToLowerInvariant()) + "|" + (prompt == null ? "" : prompt.Trim().ToLowerInvariant());
+      long now = DateTime.UtcNow.Ticks;
+      lock (gate)
+      {
+        long seenAt;
+        if (painted.TryGetValue(key, out seenAt) && now - seenAt < TimeSpan.TicksPerMinute * 3) return;
+        painted[key] = now;
+        if (painted.Count > 80) painted.Clear();
+      }
+      Hide(prompt);
+      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : current.MaxLink.Trim();
+      string chat = current.MaxChat == null ? "" : current.MaxChat.Trim();
+      string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
+      if (chat.Length == 0)
+      {
+        long found = MaxPage.Channel(link);
+        if (found != 0) chat = found.ToString(CultureInfo.InvariantCulture);
+      }
+      if (chat.Length == 0 || token.Length == 0)
+      {
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", "Картинку некуда выложить: нет канала или ключа бота MAX.", false);
+        return;
+      }
+      if (!Pictures.Take(user))
+      {
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", user + ", на этот ник уже три картинки.", false);
+        return;
+      }
+      string nick = user;
+      string chatId = chat;
+      string drawPrompt = prompt;
+      Tell("Люси", nick + ", картинку выложу сюда: " + link, true);
+      Thread draw = new Thread(delegate()
+      {
+        try
+        {
+          byte[] jpg = DrawPicture(drawPrompt);
+          if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
+          PostMax(token, chatId, nick, jpg);
+        }
+        catch
+        {
+          Pictures.GiveBack(nick);
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", nick + ", картинка не вышла.", false);
+        }
+      });
+      draw.IsBackground = true;
+      draw.Name = "LucyPicture";
+      draw.Start();
     }
 
     static readonly List<string> hidden = new List<string>();

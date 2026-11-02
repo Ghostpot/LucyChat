@@ -5879,19 +5879,20 @@ namespace Rech
       StyleBox(picRewardBox);
       picRewardBox.Text = "Картинка";
       Place(right, picRewardBox, 14, ref y, 28);
-      Place(right, MakeMute("Адрес группы MAX. Люси говорит только его"), 14, ref y, 18);
+      Place(right, MakeMute("Куда Люси отправит смотреть картинку"), 14, ref y, 18);
       maxLinkBox = new TextBox();
       StyleBox(maxLinkBox);
-      maxLinkBox.Text = "https://max.ru/channel_Ghostpot";
+      maxLinkBox.Text = "https://t.me/Ghostpot_img_bot";
       Place(right, maxLinkBox, 14, ref y, 28);
-      Place(right, MakeMute("Токен бота MAX. Id канала кнопка найдёт сама"), 14, ref y, 18);
+      Place(right, MakeMute("Чат Telegram: @канал или номер. Кнопка найдёт сама"), 14, ref y, 18);
       maxChatBox = new TextBox();
       StyleBox(maxChatBox);
       Place(right, maxChatBox, 14, ref y, 28);
+      Place(right, MakeMute("Токен бота из BotFather. В чат его не пиши"), 14, ref y, 18);
       maxTokenBox = new TextBox();
       StyleBox(maxTokenBox);
       Place(right, maxTokenBox, 14, ref y, 28);
-      Button findMax = MakeButton("Найти канал MAX", true);
+      Button findMax = MakeButton("Найти чат Telegram", true);
       findMax.Click += delegate { FindMaxChannel(); };
       Place(right, findMax, 14, ref y, 36);
       Place(right, MakeMute("Сколько секунд играет песня, от 20 до 180"), 14, ref y, 18);
@@ -6235,7 +6236,7 @@ namespace Rech
       LoadSettings();
       Shown += delegate
       {
-        if (maxChatBox != null && maxChatBox.Text.Trim().Length == 0) FindMaxChannel();
+        if (maxTokenBox != null && maxTokenBox.Text.IndexOf(':') > 0 && maxChatBox != null && maxChatBox.Text.Trim().Length == 0) FindMaxChannel();
       };
       Wire();
       loading = false;
@@ -6580,9 +6581,24 @@ namespace Rech
       if (songRewardBox != null) songRewardBox.Text = settings.SongReward == null || settings.SongReward.Length == 0 ? "Заказать песню" : settings.SongReward;
       if (lucyRewardBox != null) lucyRewardBox.Text = settings.LucyReward == null || settings.LucyReward.Length == 0 ? "Поговорить с Люси" : settings.LucyReward;
       if (picRewardBox != null) picRewardBox.Text = settings.PictureReward == null || settings.PictureReward.Length == 0 ? "Картинка" : settings.PictureReward;
-      if (maxLinkBox != null) maxLinkBox.Text = settings.MaxLink == null || settings.MaxLink.Length == 0 ? "https://max.ru/channel_Ghostpot" : settings.MaxLink;
-      if (maxChatBox != null) maxChatBox.Text = settings.MaxChat == null ? "" : settings.MaxChat;
-      if (maxTokenBox != null) maxTokenBox.Text = settings.MaxToken == null ? "" : settings.MaxToken;
+      if (maxLinkBox != null)
+      {
+        string link = settings.MaxLink == null ? "" : settings.MaxLink.Trim();
+        if (link.Length == 0 || link.IndexOf("max.ru", StringComparison.OrdinalIgnoreCase) >= 0) link = "https://t.me/Ghostpot_img_bot";
+        maxLinkBox.Text = link;
+      }
+      if (maxChatBox != null)
+      {
+        string chat = settings.MaxChat == null ? "" : settings.MaxChat.Trim();
+        if (chat == "72384283996371") chat = "";
+        maxChatBox.Text = chat;
+      }
+      if (maxTokenBox != null)
+      {
+        string token = settings.MaxToken == null ? "" : settings.MaxToken.Trim();
+        if (token.IndexOf(':') < 0) token = "";
+        maxTokenBox.Text = token;
+      }
       if (songSecondsBox != null) songSecondsBox.Text = settings.SongSeconds < 20 ? "75" : settings.SongSeconds.ToString(CultureInfo.InvariantCulture);
       if (songVolumeBar != null)
       {
@@ -7422,49 +7438,40 @@ namespace Rech
     void FindMaxChannel()
     {
       string token = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
-      string link = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
-      if (rewardState != null) rewardState.Text = "Ищу канал на странице MAX.";
+      if (token.IndexOf(':') < 0)
+      {
+        SayMax("Вставь токен бота из BotFather. Старый ключ MAX больше не нужен.");
+        return;
+      }
+      if (rewardState != null) rewardState.Text = "Ищу чат Telegram.";
       Thread thread = new Thread(delegate()
       {
-        string note;
-        long id = 0;
+        string json;
         try
         {
-          id = MaxPage.Channel(link);
+          json = AskTelegram(token);
         }
         catch (Exception ex)
         {
-          note = "Страница MAX не открылась: " + Short(ex.Message);
-          SayMax(note);
+          SayMax("Бот Telegram не ответил: " + Short(HideToken(ex.Message, token)));
           return;
         }
-        if (id == 0 && token.Length > 0)
+        string link;
+        string chat = PickTelegram(json, out link);
+        if (chat.Length == 0)
         {
-          try
-          {
-            id = AskMax(token, 0);
-          }
-          catch (Exception ex)
-          {
-            note = "Ключ бота не пускает: " + Short(ex.Message);
-            SayMax(note);
-            return;
-          }
-        }
-        if (id == 0)
-        {
-          SayMax("На странице канала нет номера. Проверь ссылку группы.");
+          SayMax("Чата нет. Напиши боту /start или добавь его админом в канал, потом нажми ещё раз.");
           return;
         }
-        string found = id.ToString(CultureInfo.InvariantCulture);
-        SayMax("Канал MAX записан: " + found);
+        SayMax("Чат Telegram записан: " + chat);
         try
         {
           BeginInvoke(new Action(delegate
           {
-            if (maxChatBox != null) maxChatBox.Text = found;
+            if (maxChatBox != null) maxChatBox.Text = chat;
+            if (link.Length > 0 && maxLinkBox != null) maxLinkBox.Text = link;
             SaveSettings();
-            if (rewardState != null) rewardState.Text = "Канал MAX: " + found;
+            if (rewardState != null) rewardState.Text = "Чат Telegram: " + chat;
           }));
         }
         catch
@@ -7472,8 +7479,86 @@ namespace Rech
         }
       });
       thread.IsBackground = true;
-      thread.Name = "MaxFind";
+      thread.Name = "TgFind";
       thread.Start();
+    }
+
+    static string HideToken(string text, string token)
+    {
+      if (text == null) return "";
+      if (token != null && token.Length > 0) text = text.Replace(token, "token");
+      return text;
+    }
+
+    static string AskTelegram(string token)
+    {
+      string url = "https://api.telegram.org/bot" + token + "/getUpdates";
+      using (HttpClient client = new HttpClient())
+      {
+        client.Timeout = TimeSpan.FromSeconds(20);
+        string json = client.GetStringAsync(url).GetAwaiter().GetResult();
+        return json == null ? "" : json;
+      }
+    }
+
+    static string PickTelegram(string json, out string link)
+    {
+      link = "";
+      string channel = "";
+      string channelLink = "";
+      string group = "";
+      string groupLink = "";
+      string person = "";
+      string personLink = "";
+      JObject root;
+      try { root = JObject.Parse(json); }
+      catch { return ""; }
+      JArray result = root["result"] as JArray;
+      if (result == null) return "";
+      int i;
+      for (i = 0; i < result.Count; i++)
+      {
+        JObject one = result[i] as JObject;
+        if (one == null) continue;
+        JToken chat = null;
+        if (one["channel_post"] != null) chat = one["channel_post"]["chat"];
+        else if (one["message"] != null) chat = one["message"]["chat"];
+        else if (one["my_chat_member"] != null) chat = one["my_chat_member"]["chat"];
+        else if (one["edited_channel_post"] != null) chat = one["edited_channel_post"]["chat"];
+        if (chat == null || chat["id"] == null) continue;
+        string id = chat["id"].ToString();
+        string user = (string)chat["username"];
+        string kind = (string)chat["type"];
+        string where = user != null && user.Length > 0 ? "@" + user : id;
+        string page = user != null && user.Length > 0 ? "https://t.me/" + user : "";
+        if (kind == "channel")
+        {
+          channel = where;
+          channelLink = page;
+        }
+        else if (kind == "group" || kind == "supergroup")
+        {
+          group = where;
+          groupLink = page;
+        }
+        else
+        {
+          person = where;
+          personLink = page;
+        }
+      }
+      if (channel.Length > 0)
+      {
+        link = channelLink;
+        return channel;
+      }
+      if (group.Length > 0)
+      {
+        link = groupLink;
+        return group;
+      }
+      link = personLink;
+      return person;
     }
 
     static string Short(string text)
@@ -8378,7 +8463,7 @@ namespace Rech
       prefs.SongTitle = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       prefs.LucyTitle = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       prefs.PictureTitle = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
-      prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
+      prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/Ghostpot_img_bot" : maxLinkBox.Text.Trim();
       prefs.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
       prefs.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       int seconds = 75;
@@ -8572,7 +8657,7 @@ namespace Rech
       settings.SongReward = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       settings.LucyReward = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       settings.PictureReward = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
-      settings.MaxLink = maxLinkBox == null ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
+      settings.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/Ghostpot_img_bot" : maxLinkBox.Text.Trim();
       settings.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
       settings.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       int songSeconds = 75;
@@ -11227,18 +11312,15 @@ namespace Rech
         if (painted.Count > 80) painted.Clear();
       }
       Hide(prompt);
-      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : current.MaxLink.Trim();
+      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://t.me/Ghostpot_img_bot" : current.MaxLink.Trim();
       string chat = current.MaxChat == null ? "" : current.MaxChat.Trim();
       string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
-      if (chat.Length == 0)
-      {
-        long found = MaxPage.Channel(link);
-        if (found != 0) chat = found.ToString(CultureInfo.InvariantCulture);
-      }
+      if (chat == "72384283996371") chat = "";
+      if (token.IndexOf(':') < 0) token = "";
       if (chat.Length == 0 || token.Length == 0)
       {
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Картинку некуда выложить: нет канала или ключа бота MAX.", false);
+        Tell("Люси", "Картинку некуда выложить. Вставь токен бота и нажми «Найти чат Telegram».", false);
         return;
       }
       if (!Pictures.Take(user))
@@ -11257,8 +11339,8 @@ namespace Rech
         {
           byte[] jpg = DrawPicture(drawPrompt);
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
-          PostMax(token, chatId, nick, jpg);
-          Tell("Люси", nick + ", картинка уже в группе.", false);
+          PostTelegram(token, chatId, nick, jpg);
+          Tell("Люси", nick + ", картинка уже в Telegram.", false);
         }
         catch (Exception ex)
         {
@@ -11333,51 +11415,26 @@ namespace Rech
       return token == null ? "" : token;
     }
 
-    static void PostMax(string token, string chat, string nick, byte[] jpg)
+    static void PostTelegram(string token, string chat, string nick, byte[] jpg)
     {
-      HttpRequestMessage slot = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/uploads?type=image");
-      slot.Headers.TryAddWithoutValidation("Authorization", token);
-      JObject info = JObject.Parse(Send(slot));
-      string upload = (string)info["url"];
-      string photo = (string)info["token"];
-      if (upload == null || upload.Length == 0) throw new Exception("MAX не дал адрес загрузки.");
+      string url = "https://api.telegram.org/bot" + token + "/sendPhoto";
       MultipartFormDataContent form = new MultipartFormDataContent();
+      form.Add(new StringContent(chat), "chat_id");
+      form.Add(new StringContent(nick == null ? "" : nick), "caption");
       ByteArrayContent file = new ByteArrayContent(jpg);
       file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
-      form.Add(file, "data", "picture.jpg");
-      HttpRequestMessage up = new HttpRequestMessage(HttpMethod.Post, upload);
-      up.Content = form;
-      string uploaded = Send(up);
-      JObject again = null;
-      try { again = JObject.Parse(uploaded); } catch { }
-      JToken photos = null;
-      string fromFile = PhotoToken(again, out photos);
-      if (fromFile.Length > 0) photo = fromFile;
-      if ((photo == null || photo.Length == 0) && photos == null)
-      {
-        string snippet = uploaded == null ? "" : uploaded.Replace("\r", " ").Replace("\n", " ");
-        if (snippet.Length > 90) snippet = snippet.Substring(0, 90);
-        throw new Exception("MAX не принял картинку. " + snippet);
-      }
-      Thread.Sleep(1500);
-      string payload = photos != null ? "{\"photos\":" + photos.ToString(Newtonsoft.Json.Formatting.None) + "}" : "{\"token\":" + JsonConvert.ToString(photo) + "}";
-      string body = "{\"text\":" + JsonConvert.ToString(nick) + ",\"attachments\":[{\"type\":\"image\",\"payload\":" + payload + "}]}";
-      HttpRequestMessage msg = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/messages?chat_id=" + Uri.EscapeDataString(chat));
-      msg.Headers.TryAddWithoutValidation("Authorization", token);
-      msg.Content = new StringContent(body, Encoding.UTF8, "application/json");
+      form.Add(file, "photo", "picture.jpg");
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, url);
+      req.Content = form;
       try
       {
-        Send(msg);
+        Send(req);
       }
       catch (Exception ex)
       {
         string note = ex.Message == null ? "" : ex.Message;
-        if (note.IndexOf("not.ready", StringComparison.OrdinalIgnoreCase) < 0 && note.IndexOf("attachment", StringComparison.OrdinalIgnoreCase) < 0) throw;
-        Thread.Sleep(2000);
-        HttpRequestMessage retry = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/messages?chat_id=" + Uri.EscapeDataString(chat));
-        retry.Headers.TryAddWithoutValidation("Authorization", token);
-        retry.Content = new StringContent(body, Encoding.UTF8, "application/json");
-        Send(retry);
+        if (token != null && token.Length > 0) note = note.Replace(token, "token");
+        throw new Exception("Telegram не принял картинку. " + note);
       }
     }
 

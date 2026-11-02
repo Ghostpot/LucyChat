@@ -6231,6 +6231,10 @@ namespace Rech
 
       LoadVoices();
       LoadSettings();
+      Shown += delegate
+      {
+        if (maxChatBox != null && maxChatBox.Text.Trim().Length == 0) FindMaxChannel();
+      };
       Wire();
       loading = false;
       Rewards.Line += OnRewardLine;
@@ -7397,41 +7401,50 @@ namespace Rech
     void FindMaxChannel()
     {
       string token = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
-      if (token.Length == 0)
-      {
-        if (rewardState != null) rewardState.Text = "Сначала вставь ключ бота MAX.";
-        return;
-      }
-      if (rewardState != null) rewardState.Text = "Слушаю MAX. Удали бота из канала и сразу добавь его администратором.";
+      string link = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
+      if (rewardState != null) rewardState.Text = "Ищу канал на странице MAX.";
       Thread thread = new Thread(delegate()
       {
-        string note = "Тишина. Нажми ещё раз, удали бота из канала и добавь снова.";
+        string note;
+        long id = 0;
         try
         {
-          long id = AskMax(token, 0);
-          if (id == 0) id = AskMax(token, 25);
-          if (id != 0)
-          {
-            string found = id.ToString(CultureInfo.InvariantCulture);
-            note = "Канал MAX найден: " + found;
-            BeginInvoke(new Action(delegate
-            {
-              if (maxChatBox != null) maxChatBox.Text = found;
-              SaveSettings();
-              if (rewardState != null) rewardState.Text = note;
-            }));
-            return;
-          }
+          id = MaxPage.Channel(link);
         }
         catch (Exception ex)
         {
-          string why = ex.Message == null ? "ошибка" : ex.Message;
-          if (why.Length > 140) why = why.Substring(0, 140);
-          note = "MAX не ответил: " + why;
+          note = "Страница MAX не открылась: " + Short(ex.Message);
+          SayMax(note);
+          return;
         }
+        if (id == 0 && token.Length > 0)
+        {
+          try
+          {
+            id = AskMax(token, 0);
+          }
+          catch (Exception ex)
+          {
+            note = "Ключ бота не пускает: " + Short(ex.Message);
+            SayMax(note);
+            return;
+          }
+        }
+        if (id == 0)
+        {
+          SayMax("На странице канала нет номера. Проверь ссылку группы.");
+          return;
+        }
+        string found = id.ToString(CultureInfo.InvariantCulture);
+        SayMax("Канал MAX записан: " + found);
         try
         {
-          BeginInvoke(new Action(delegate { if (rewardState != null) rewardState.Text = note; }));
+          BeginInvoke(new Action(delegate
+          {
+            if (maxChatBox != null) maxChatBox.Text = found;
+            SaveSettings();
+            if (rewardState != null) rewardState.Text = "Канал MAX: " + found;
+          }));
         }
         catch
         {
@@ -7440,6 +7453,36 @@ namespace Rech
       thread.IsBackground = true;
       thread.Name = "MaxFind";
       thread.Start();
+    }
+
+    static string Short(string text)
+    {
+      if (text == null || text.Length == 0) return "ошибка";
+      if (text.Length > 160) return text.Substring(0, 160);
+      return text;
+    }
+
+    void SayMax(string text)
+    {
+      try
+      {
+        BeginInvoke(new Action(delegate
+        {
+          if (rewardState != null) rewardState.Text = text;
+          ChatMessage message = new ChatMessage();
+          message.Id = "max:" + Guid.NewGuid().ToString("N");
+          message.SourceId = "max";
+          message.Platform = "lucy";
+          message.Author = "Люси";
+          message.Text = text;
+          message.Ts = Net.Now();
+          message.Fresh = false;
+          AddMessage(message);
+        }));
+      }
+      catch
+      {
+      }
     }
 
     static long AskMax(string token, int timeout)
@@ -10085,6 +10128,28 @@ namespace Rech
     public string Host;
   }
 
+  static class MaxPage
+  {
+    public static long Channel(string link)
+    {
+      if (link == null) link = "";
+      link = link.Trim();
+      if (link.Length == 0) link = "https://max.ru/channel_Ghostpot";
+      if (link.IndexOf("http", StringComparison.OrdinalIgnoreCase) != 0) link = "https://max.ru/" + link.TrimStart('/');
+      using (HttpClient client = new HttpClient())
+      {
+        client.Timeout = TimeSpan.FromSeconds(20);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "LucyChat");
+        string html = client.GetStringAsync(link).GetAwaiter().GetResult();
+        Match hit = Regex.Match(html == null ? "" : html, "channelId\\s*:\\s*(\\d{6,20})");
+        long id;
+        if (hit.Success && long.TryParse(hit.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) && id > 0) return id;
+      }
+      if (link.IndexOf("channel_Ghostpot", StringComparison.OrdinalIgnoreCase) >= 0) return 72384283996371L;
+      return 0;
+    }
+  }
+
   static class Pictures
   {
     static readonly object gate = new object();
@@ -11055,19 +11120,26 @@ namespace Rech
       string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
       if (chat.Length == 0 || token.Length == 0)
       {
+        long found = MaxPage.Channel(link);
+        if (found != 0) chat = found.ToString(CultureInfo.InvariantCulture);
+      }
+      if (chat.Length == 0 || token.Length == 0)
+      {
         Pictures.GiveBack(user);
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Картинку пока некуда выложить. В настройках нет бота MAX.", true);
+        Tell("Люси", "Картинку некуда выложить: нет канала или ключа бота MAX.", true);
         return;
       }
       string nick = user;
+      string chatId = chat;
+      Tell("Люси", nick + ", картинку выложу сюда: " + link, true);
       Thread draw = new Thread(delegate()
       {
         try
         {
           byte[] jpg = DrawPicture(prompt);
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
-          PostMax(token, chat, nick, jpg);
+          PostMax(token, chatId, nick, jpg);
           Tell("Люси", nick + ", картинку выложила сюда: " + link, true);
         }
         catch

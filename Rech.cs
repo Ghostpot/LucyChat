@@ -5874,7 +5874,7 @@ namespace Rech
       StyleBox(lucyRewardBox);
       lucyRewardBox.Text = "Поговорить с Люси";
       Place(right, lucyRewardBox, 14, ref y, 28);
-      Place(right, MakeMute("Награда картинки. На Twitch поставь цену 1000 и ввод текста"), 14, ref y, 18);
+      Place(right, MakeMute("Награда картинки. Подойдёт «Картинка» и «Твоя Генерация»"), 14, ref y, 18);
       picRewardBox = new TextBox();
       StyleBox(picRewardBox);
       picRewardBox.Text = "Картинка";
@@ -11114,8 +11114,13 @@ namespace Rech
         return;
       }
       string pictureTitle = current.PictureTitle == null || current.PictureTitle.Trim().Length == 0 ? "Картинка" : current.PictureTitle.Trim();
-      if (!SameTitle(title, pictureTitle)) return;
+      if (!SameTitle(title, pictureTitle) && !PictureName(title))
+      {
+        Tell("Люси", "Пришла награда «" + (title == null ? "" : title) + "». Это не картинка.", false);
+        return;
+      }
       string prompt = Regex.Replace(input, "\\s+", " ").Trim();
+      if (prompt.Length < 2) prompt = PicturePrompt(user, title == null ? "" : title);
       if (prompt.Length > 240) prompt = prompt.Substring(0, 240);
       if (prompt.Length < 2)
       {
@@ -11358,6 +11363,13 @@ namespace Rech
         cool[key] = DateTime.UtcNow;
         return false;
       }
+    }
+
+    static bool PictureName(string title)
+    {
+      if (title == null) return false;
+      string low = title.ToLowerInvariant();
+      return low.Contains("картин") || low.Contains("генерац") || low.Contains("рисунок");
     }
 
     static bool SameTitle(string title, string want)

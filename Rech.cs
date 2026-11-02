@@ -5882,13 +5882,16 @@ namespace Rech
       StyleBox(maxLinkBox);
       maxLinkBox.Text = "https://max.ru/channel_Ghostpot";
       Place(right, maxLinkBox, 14, ref y, 28);
-      Place(right, MakeMute("id канала MAX и токен бота. Бот — администратор, пишет ник и картинку"), 14, ref y, 18);
+      Place(right, MakeMute("Токен бота MAX. Id канала кнопка найдёт сама"), 14, ref y, 18);
       maxChatBox = new TextBox();
       StyleBox(maxChatBox);
       Place(right, maxChatBox, 14, ref y, 28);
       maxTokenBox = new TextBox();
       StyleBox(maxTokenBox);
       Place(right, maxTokenBox, 14, ref y, 28);
+      Button findMax = MakeButton("Найти канал MAX", true);
+      findMax.Click += delegate { FindMaxChannel(); };
+      Place(right, findMax, 14, ref y, 36);
       Place(right, MakeMute("Сколько секунд играет песня, от 20 до 180"), 14, ref y, 18);
       songSecondsBox = new TextBox();
       StyleBox(songSecondsBox);
@@ -7389,6 +7392,104 @@ namespace Rech
       if (author.Length == 0 || IsMuted(author)) return;
       muteBox.Text = muteBox.Text.Trim().Length == 0 ? author : muteBox.Text.Trim() + "\r\n" + author;
       SaveSettings();
+    }
+
+    void FindMaxChannel()
+    {
+      string token = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
+      if (token.Length == 0)
+      {
+        if (rewardState != null) rewardState.Text = "Сначала вставь ключ бота MAX.";
+        return;
+      }
+      if (rewardState != null) rewardState.Text = "Слушаю MAX. Удали бота из канала и сразу добавь его администратором.";
+      Thread thread = new Thread(delegate()
+      {
+        string note = "Тишина. Нажми ещё раз, удали бота из канала и добавь снова.";
+        try
+        {
+          long id = AskMax(token, 0);
+          if (id == 0) id = AskMax(token, 25);
+          if (id != 0)
+          {
+            string found = id.ToString(CultureInfo.InvariantCulture);
+            note = "Канал MAX найден: " + found;
+            BeginInvoke(new Action(delegate
+            {
+              if (maxChatBox != null) maxChatBox.Text = found;
+              SaveSettings();
+              if (rewardState != null) rewardState.Text = note;
+            }));
+            return;
+          }
+        }
+        catch (Exception ex)
+        {
+          string why = ex.Message == null ? "ошибка" : ex.Message;
+          if (why.Length > 140) why = why.Substring(0, 140);
+          note = "MAX не ответил: " + why;
+        }
+        try
+        {
+          BeginInvoke(new Action(delegate { if (rewardState != null) rewardState.Text = note; }));
+        }
+        catch
+        {
+        }
+      });
+      thread.IsBackground = true;
+      thread.Name = "MaxFind";
+      thread.Start();
+    }
+
+    static long AskMax(string token, int timeout)
+    {
+      string url = "https://platform-api2.max.ru/updates?timeout=" + timeout.ToString(CultureInfo.InvariantCulture) + "&limit=100&types=bot_added&types=message_created";
+      using (HttpClient client = new HttpClient())
+      {
+        client.Timeout = TimeSpan.FromSeconds(timeout + 15);
+        HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("Authorization", token);
+        HttpResponseMessage res = client.Send(req);
+        string json = res.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        int code = (int)res.StatusCode;
+        res.Dispose();
+        if (code < 200 || code >= 300) throw new Exception(code.ToString(CultureInfo.InvariantCulture) + " " + json);
+        return PickMaxChat(json);
+      }
+    }
+
+    static long PickMaxChat(string json)
+    {
+      JToken root = JToken.Parse(json);
+      List<long> channels = new List<long>();
+      List<long> any = new List<long>();
+      WalkMax(root, channels, any);
+      if (channels.Count > 0) return channels[channels.Count - 1];
+      if (any.Count > 0) return any[any.Count - 1];
+      return 0;
+    }
+
+    static void WalkMax(JToken token, List<long> channels, List<long> any)
+    {
+      JObject obj = token as JObject;
+      if (obj != null)
+      {
+        JToken id = obj["chat_id"];
+        if (id != null && (id.Type == JTokenType.Integer || id.Type == JTokenType.Float))
+        {
+          long number = (long)id;
+          JToken flag = obj["is_channel"];
+          if (flag != null && flag.Type == JTokenType.Boolean && (bool)flag) channels.Add(number);
+          else any.Add(number);
+        }
+        foreach (JProperty prop in obj.Properties()) WalkMax(prop.Value, channels, any);
+        return;
+      }
+      JArray list = token as JArray;
+      if (list == null) return;
+      int i;
+      for (i = 0; i < list.Count; i++) WalkMax(list[i], channels, any);
     }
 
     void ApplyLucyStage()

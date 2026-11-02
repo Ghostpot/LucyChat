@@ -573,6 +573,8 @@ namespace Rech
     public string MaxLink;
     public string MaxChat;
     public string MaxToken;
+    public string CfAccount;
+    public string CfToken;
     public int SongSeconds;
     public int? SongVolume;
     public bool? SongYoutube;
@@ -5428,6 +5430,8 @@ namespace Rech
     TextBox maxLinkBox;
     TextBox maxChatBox;
     TextBox maxTokenBox;
+    TextBox cfAccountBox;
+    TextBox cfTokenBox;
     TextBox songSecondsBox;
     Label songVolumeLabel;
     TrackBar songVolumeBar;
@@ -5893,6 +5897,14 @@ namespace Rech
       maxTokenBox = new TextBox();
       StyleBox(maxTokenBox);
       Place(right, maxTokenBox, 14, ref y, 28);
+      Place(right, MakeMute("Cloudflare Account ID. Flux, не больше 100 картинок в день"), 14, ref y, 18);
+      cfAccountBox = new TextBox();
+      StyleBox(cfAccountBox);
+      Place(right, cfAccountBox, 14, ref y, 28);
+      Place(right, MakeMute("Токен Cloudflare, право Workers AI. В чат его не пиши"), 14, ref y, 18);
+      cfTokenBox = new TextBox();
+      StyleBox(cfTokenBox);
+      Place(right, cfTokenBox, 14, ref y, 28);
       Button findMax = MakeButton("Найти чат Telegram", true);
       findMax.Click += delegate { FindMaxChannel(); };
       Place(right, findMax, 14, ref y, 36);
@@ -6373,6 +6385,8 @@ namespace Rech
       if (maxLinkBox != null) maxLinkBox.TextChanged += save;
       if (maxChatBox != null) maxChatBox.TextChanged += save;
       if (maxTokenBox != null) maxTokenBox.TextChanged += save;
+      if (cfAccountBox != null) cfAccountBox.TextChanged += save;
+      if (cfTokenBox != null) cfTokenBox.TextChanged += save;
       if (songSecondsBox != null) songSecondsBox.TextChanged += save;
       if (songVolumeBar != null) songVolumeBar.Scroll += delegate
       {
@@ -6600,6 +6614,8 @@ namespace Rech
         if (token.IndexOf(':') < 0) token = "";
         maxTokenBox.Text = token;
       }
+      if (cfAccountBox != null) cfAccountBox.Text = settings.CfAccount == null ? "" : settings.CfAccount;
+      if (cfTokenBox != null) cfTokenBox.Text = settings.CfToken == null ? "" : settings.CfToken;
       if (songSecondsBox != null) songSecondsBox.Text = settings.SongSeconds < 20 ? "75" : settings.SongSeconds.ToString(CultureInfo.InvariantCulture);
       if (songVolumeBar != null)
       {
@@ -8467,6 +8483,8 @@ namespace Rech
       prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : maxLinkBox.Text.Trim();
       prefs.MaxChat = maxChatBox == null || maxChatBox.Text.Trim().Length == 0 ? "@ghostpot_chat" : maxChatBox.Text.Trim();
       prefs.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
+      prefs.CfAccount = cfAccountBox == null ? "" : cfAccountBox.Text.Trim();
+      prefs.CfToken = cfTokenBox == null ? "" : cfTokenBox.Text.Trim();
       int seconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds);
       if (seconds < 20) seconds = 20;
@@ -8661,6 +8679,8 @@ namespace Rech
       settings.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : maxLinkBox.Text.Trim();
       settings.MaxChat = maxChatBox == null || maxChatBox.Text.Trim().Length == 0 ? "@ghostpot_chat" : maxChatBox.Text.Trim();
       settings.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
+      settings.CfAccount = cfAccountBox == null ? "" : cfAccountBox.Text.Trim();
+      settings.CfToken = cfTokenBox == null ? "" : cfTokenBox.Text.Trim();
       int songSeconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out songSeconds);
       if (songSeconds < 20) songSeconds = 20;
@@ -10215,6 +10235,8 @@ namespace Rech
     public string MaxLink;
     public string MaxChat;
     public string MaxToken;
+    public string CfAccount;
+    public string CfToken;
     public int Seconds;
     public int Volume;
     public bool Youtube;
@@ -10314,6 +10336,41 @@ namespace Rech
     {
       string key = nick == null ? "" : nick.Trim().ToLowerInvariant();
       if (key.Length == 0) return;
+      lock (gate)
+      {
+        Dictionary<string, int> map = Load();
+        int count;
+        if (!map.TryGetValue(key, out count) || count <= 0) return;
+        map[key] = count - 1;
+        Save(map);
+      }
+    }
+
+    public static bool TakeDay()
+    {
+      string key = "@day:" + DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+      lock (gate)
+      {
+        Dictionary<string, int> map = Load();
+        int count;
+        map.TryGetValue(key, out count);
+        if (count >= 100) return false;
+        List<string> old = new List<string>();
+        foreach (string name in map.Keys)
+        {
+          if (name.StartsWith("@day:", StringComparison.Ordinal) && name != key) old.Add(name);
+        }
+        int i;
+        for (i = 0; i < old.Count; i++) map.Remove(old[i]);
+        map[key] = count + 1;
+        Save(map);
+        return true;
+      }
+    }
+
+    public static void GiveDay()
+    {
+      string key = "@day:" + DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
       lock (gate)
       {
         Dictionary<string, int> map = Load();
@@ -11338,15 +11395,33 @@ namespace Rech
         Tell("Люси", user + ", на этот ник уже три картинки.", false);
         return;
       }
+      string account = current.CfAccount == null ? "" : current.CfAccount.Trim();
+      string paintKey = current.CfToken == null ? "" : current.CfToken.Trim();
+      if (account.Length < 8 || paintKey.Length < 10)
+      {
+        Pictures.GiveBack(user);
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", "Нет ключа Cloudflare. Вставь Account ID и токен Workers AI.", false);
+        return;
+      }
+      if (!Pictures.TakeDay())
+      {
+        Pictures.GiveBack(user);
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", "На сегодня 100 картинок уже разобрали.", false);
+        return;
+      }
       string nick = user;
       string chatId = chat;
       string drawPrompt = prompt;
+      string drawAccount = account;
+      string drawKey = paintKey;
       Tell("Люси", nick + ", картинку выложу сюда: " + link, true);
       Thread draw = new Thread(delegate()
       {
         try
         {
-          byte[] jpg = DrawPicture(drawPrompt);
+          byte[] jpg = DrawPicture(drawPrompt, drawAccount, drawKey);
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
           PostTelegram(token, chatId, nick, jpg);
           Tell("Люси", nick + ", картинка уже в Telegram.", false);
@@ -11354,8 +11429,10 @@ namespace Rech
         catch (Exception ex)
         {
           Pictures.GiveBack(nick);
+          Pictures.GiveDay();
           Cancel(current, broadcaster, rewardId, redemption);
           string why = ex.Message == null ? "" : ex.Message;
+          if (drawKey.Length > 0) why = why.Replace(drawKey, "token");
           if (why.Length > 140) why = why.Substring(0, 140);
           Tell("Люси", nick + ", картинка не вышла. " + why, false);
         }
@@ -11388,15 +11465,37 @@ namespace Rech
       }
     }
 
-    static byte[] DrawPicture(string prompt)
+    static byte[] DrawPicture(string prompt, string account, string token)
     {
       string english = ToEnglish(prompt);
       if (english.Length == 0) english = prompt;
       if (!string.Equals(english, prompt, StringComparison.Ordinal)) Tell("Люси", "Рисую так: " + english, false);
-      byte[] fast = TryPollinations(english);
-      if (fast != null) return fast;
-      Tell("Люси", "Быстрый рисовальщик занят. Рисую в бесплатной очереди, это минута.", false);
-      return TryHorde(english);
+      return TryCloudflare(account, token, english);
+    }
+
+    static byte[] TryCloudflare(string account, string token, string prompt)
+    {
+      string url = "https://api.cloudflare.com/client/v4/accounts/" + Uri.EscapeDataString(account) + "/ai/run/@cf/black-forest-labs/flux-1-schnell";
+      string body = "{\"prompt\":" + JsonConvert.ToString(prompt) + ",\"steps\":4}";
+      HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Post, url);
+      req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+      req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+      HttpResponseMessage res = Net.Http.Send(req);
+      byte[] bytes = res.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+      int code = (int)res.StatusCode;
+      res.Dispose();
+      if (code < 200 || code >= 300)
+      {
+        string note = bytes == null ? "" : Encoding.UTF8.GetString(bytes);
+        if (note.Length > 160) note = note.Substring(0, 160);
+        throw new Exception("Cloudflare не нарисовал. " + note);
+      }
+      if (bytes != null && bytes.Length > 800 && ((bytes[0] == 0xFF && bytes[1] == 0xD8) || (bytes[0] == 0x89 && bytes[1] == 0x50))) return bytes;
+      JObject obj = JObject.Parse(Encoding.UTF8.GetString(bytes));
+      string image = (string)obj.SelectToken("result.image");
+      if (image == null || image.Length == 0) image = (string)obj["image"];
+      if (image == null || image.Length < 80) throw new Exception("Cloudflare вернул пустую картинку.");
+      return Convert.FromBase64String(image);
     }
 
     static string ToEnglish(string prompt)

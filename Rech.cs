@@ -568,6 +568,10 @@ namespace Rech
     public string GgModToken;
     public string SongReward;
     public string LucyReward;
+    public string PictureReward;
+    public string MaxLink;
+    public string MaxChat;
+    public string MaxToken;
     public int SongSeconds;
     public int? SongVolume;
     public bool? SongYoutube;
@@ -5418,6 +5422,10 @@ namespace Rech
     TextBox twitchClient;
     TextBox songRewardBox;
     TextBox lucyRewardBox;
+    TextBox picRewardBox;
+    TextBox maxLinkBox;
+    TextBox maxChatBox;
+    TextBox maxTokenBox;
     TextBox songSecondsBox;
     Label songVolumeLabel;
     TrackBar songVolumeBar;
@@ -5864,6 +5872,23 @@ namespace Rech
       StyleBox(lucyRewardBox);
       lucyRewardBox.Text = "Поговорить с Люси";
       Place(right, lucyRewardBox, 14, ref y, 28);
+      Place(right, MakeMute("Награда картинки. На Twitch поставь цену 1000 и ввод текста"), 14, ref y, 18);
+      picRewardBox = new TextBox();
+      StyleBox(picRewardBox);
+      picRewardBox.Text = "Картинка";
+      Place(right, picRewardBox, 14, ref y, 28);
+      Place(right, MakeMute("Адрес группы MAX. Люси говорит только его"), 14, ref y, 18);
+      maxLinkBox = new TextBox();
+      StyleBox(maxLinkBox);
+      maxLinkBox.Text = "https://max.ru/channel_Ghostpot";
+      Place(right, maxLinkBox, 14, ref y, 28);
+      Place(right, MakeMute("id канала MAX и токен бота. Бот — администратор, пишет ник и картинку"), 14, ref y, 18);
+      maxChatBox = new TextBox();
+      StyleBox(maxChatBox);
+      Place(right, maxChatBox, 14, ref y, 28);
+      maxTokenBox = new TextBox();
+      StyleBox(maxTokenBox);
+      Place(right, maxTokenBox, 14, ref y, 28);
       Place(right, MakeMute("Сколько секунд играет песня, от 20 до 180"), 14, ref y, 18);
       songSecondsBox = new TextBox();
       StyleBox(songSecondsBox);
@@ -6333,6 +6358,10 @@ namespace Rech
       if (twitchClient != null) twitchClient.TextChanged += save;
       if (songRewardBox != null) songRewardBox.TextChanged += save;
       if (lucyRewardBox != null) lucyRewardBox.TextChanged += save;
+      if (picRewardBox != null) picRewardBox.TextChanged += save;
+      if (maxLinkBox != null) maxLinkBox.TextChanged += save;
+      if (maxChatBox != null) maxChatBox.TextChanged += save;
+      if (maxTokenBox != null) maxTokenBox.TextChanged += save;
       if (songSecondsBox != null) songSecondsBox.TextChanged += save;
       if (songVolumeBar != null) songVolumeBar.Scroll += delegate
       {
@@ -6541,6 +6570,10 @@ namespace Rech
       twitchBotLogin = settings.TwitchBotLogin == null ? "" : settings.TwitchBotLogin;
       if (songRewardBox != null) songRewardBox.Text = settings.SongReward == null || settings.SongReward.Length == 0 ? "Заказать песню" : settings.SongReward;
       if (lucyRewardBox != null) lucyRewardBox.Text = settings.LucyReward == null || settings.LucyReward.Length == 0 ? "Поговорить с Люси" : settings.LucyReward;
+      if (picRewardBox != null) picRewardBox.Text = settings.PictureReward == null || settings.PictureReward.Length == 0 ? "Картинка" : settings.PictureReward;
+      if (maxLinkBox != null) maxLinkBox.Text = settings.MaxLink == null || settings.MaxLink.Length == 0 ? "https://max.ru/channel_Ghostpot" : settings.MaxLink;
+      if (maxChatBox != null) maxChatBox.Text = settings.MaxChat == null ? "" : settings.MaxChat;
+      if (maxTokenBox != null) maxTokenBox.Text = settings.MaxToken == null ? "" : settings.MaxToken;
       if (songSecondsBox != null) songSecondsBox.Text = settings.SongSeconds < 20 ? "75" : settings.SongSeconds.ToString(CultureInfo.InvariantCulture);
       if (songVolumeBar != null)
       {
@@ -7168,6 +7201,7 @@ namespace Rech
         Forgive(message);
       }
       else if (message.Fresh && Moderate(message)) quiet = true;
+      if (Rewards.Hides(message.Text)) quiet = true;
       if (Rewards.Echo(message.Author, message.Text, message.Platform)) return;
       Row row = new Row();
       row.Mark = PlatformMark(message.Platform);
@@ -7265,7 +7299,8 @@ namespace Rech
       if (flat.Length == 0) return false;
       string lucy = lucyRewardBox == null || lucyRewardBox.Text.Trim().Length == 0 ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       string song = songRewardBox == null || songRewardBox.Text.Trim().Length == 0 ? "Заказать песню" : songRewardBox.Text.Trim();
-      return RewardTitle(flat, lucy) || RewardTitle(flat, song);
+      string picture = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
+      return RewardTitle(flat, lucy) || RewardTitle(flat, song) || RewardTitle(flat, picture);
     }
 
     static bool RewardTitle(string text, string title)
@@ -8177,6 +8212,10 @@ namespace Rech
       prefs.Refresh = twitchRefresh == null ? "" : twitchRefresh;
       prefs.SongTitle = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       prefs.LucyTitle = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
+      prefs.PictureTitle = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
+      prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
+      prefs.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
+      prefs.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       int seconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds);
       if (seconds < 20) seconds = 20;
@@ -8367,6 +8406,10 @@ namespace Rech
       settings.TwitchBotLogin = twitchBotLogin == null ? "" : twitchBotLogin;
       settings.SongReward = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       settings.LucyReward = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
+      settings.PictureReward = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
+      settings.MaxLink = maxLinkBox == null ? "https://max.ru/channel_Ghostpot" : maxLinkBox.Text.Trim();
+      settings.MaxChat = maxChatBox == null ? "" : maxChatBox.Text.Trim();
+      settings.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       int songSeconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out songSeconds);
       if (songSeconds < 20) songSeconds = 20;
@@ -9917,6 +9960,10 @@ namespace Rech
     public string Refresh;
     public string SongTitle;
     public string LucyTitle;
+    public string PictureTitle;
+    public string MaxLink;
+    public string MaxChat;
+    public string MaxToken;
     public int Seconds;
     public int Volume;
     public bool Youtube;
@@ -9935,6 +9982,74 @@ namespace Rech
     public string Embed;
     public string By;
     public string Host;
+  }
+
+  static class Pictures
+  {
+    static readonly object gate = new object();
+
+    static string FilePath()
+    {
+      return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rech", "pictures.json");
+    }
+
+    static Dictionary<string, int> Load()
+    {
+      try
+      {
+        if (File.Exists(FilePath()))
+        {
+          Dictionary<string, int> read = JsonConvert.DeserializeObject<Dictionary<string, int>>(File.ReadAllText(FilePath(), Encoding.UTF8));
+          if (read != null) return read;
+        }
+      }
+      catch
+      {
+      }
+      return new Dictionary<string, int>();
+    }
+
+    static void Save(Dictionary<string, int> map)
+    {
+      try
+      {
+        Directory.CreateDirectory(Path.GetDirectoryName(FilePath()));
+        File.WriteAllText(FilePath(), JsonConvert.SerializeObject(map), new UTF8Encoding(false));
+      }
+      catch
+      {
+      }
+    }
+
+    public static bool Take(string nick)
+    {
+      string key = nick == null ? "" : nick.Trim().ToLowerInvariant();
+      if (key.Length == 0) return false;
+      lock (gate)
+      {
+        Dictionary<string, int> map = Load();
+        int count;
+        map.TryGetValue(key, out count);
+        if (count >= 3) return false;
+        map[key] = count + 1;
+        Save(map);
+        return true;
+      }
+    }
+
+    public static void GiveBack(string nick)
+    {
+      string key = nick == null ? "" : nick.Trim().ToLowerInvariant();
+      if (key.Length == 0) return;
+      lock (gate)
+      {
+        Dictionary<string, int> map = Load();
+        int count;
+        if (!map.TryGetValue(key, out count) || count <= 0) return;
+        map[key] = count - 1;
+        Save(map);
+      }
+    }
   }
 
   public class Rewards
@@ -10809,6 +10924,149 @@ namespace Rech
         talk.IsBackground = true;
         talk.Name = "LucyReward";
         talk.Start();
+        return;
+      }
+      string pictureTitle = current.PictureTitle == null || current.PictureTitle.Trim().Length == 0 ? "Картинка" : current.PictureTitle.Trim();
+      if (!SameTitle(title, pictureTitle)) return;
+      string prompt = Regex.Replace(input, "\\s+", " ").Trim();
+      if (prompt.Length > 240) prompt = prompt.Substring(0, 240);
+      if (prompt.Length < 2)
+      {
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", user + ", в награде напиши, что нарисовать.", false);
+        return;
+      }
+      if (Swear.Has(prompt) || RoughPicture(prompt))
+      {
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", user + ", такое рисовать не буду.", true);
+        return;
+      }
+      if (!Pictures.Take(user))
+      {
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", user + ", на этот ник уже три картинки.", true);
+        return;
+      }
+      Hide(prompt);
+      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://max.ru/channel_Ghostpot" : current.MaxLink.Trim();
+      string chat = current.MaxChat == null ? "" : current.MaxChat.Trim();
+      string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
+      if (chat.Length == 0 || token.Length == 0)
+      {
+        Pictures.GiveBack(user);
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", "Картинку пока некуда выложить. В настройках нет бота MAX.", true);
+        return;
+      }
+      string nick = user;
+      Thread draw = new Thread(delegate()
+      {
+        try
+        {
+          byte[] jpg = DrawPicture(prompt);
+          if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
+          PostMax(token, chat, nick, jpg);
+          Tell("Люси", nick + ", картинку выложила сюда: " + link, true);
+        }
+        catch
+        {
+          Pictures.GiveBack(nick);
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", nick + ", картинка не вышла. Баллы верну.", true);
+        }
+      });
+      draw.IsBackground = true;
+      draw.Name = "LucyPicture";
+      draw.Start();
+    }
+
+    static bool RoughPicture(string text)
+    {
+      if (text == null) return false;
+      string low = text.ToLowerInvariant();
+      bool child = low.Contains("ребен") || low.Contains("ребён") || low.Contains("школьниц") || low.Contains("малолет") || low.Contains("несовершеннолет") || low.Contains("child") || low.Contains("loli") || low.Contains("лоли") || low.Contains("underage");
+      bool sex = low.Contains("секс") || low.Contains("голая") || low.Contains("голый") || low.Contains("nude") || low.Contains("porn") || low.Contains("nsfw") || low.Contains("трах") || low.Contains("эротик");
+      return child && sex;
+    }
+
+    static readonly List<string> hidden = new List<string>();
+
+    public static void Hide(string text)
+    {
+      string key = Regex.Replace(text == null ? "" : text, "\\s+", " ").Trim().ToLowerInvariant();
+      if (key.Length == 0) return;
+      lock (gate)
+      {
+        hidden.Add(key);
+        while (hidden.Count > 40) hidden.RemoveAt(0);
+      }
+    }
+
+    public static bool Hides(string text)
+    {
+      string key = Regex.Replace(text == null ? "" : text, "\\s+", " ").Trim().ToLowerInvariant();
+      if (key.Length == 0) return false;
+      lock (gate)
+      {
+        return hidden.Contains(key);
+      }
+    }
+
+    static byte[] DrawPicture(string prompt)
+    {
+      string url = "https://image.pollinations.ai/prompt/" + Uri.EscapeDataString(prompt) + "?width=768&height=768&nologo=true&model=flux&seed=" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture);
+      using (HttpClient client = new HttpClient())
+      {
+        client.Timeout = TimeSpan.FromSeconds(90);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "LucyChat");
+        byte[] bytes = client.GetByteArrayAsync(url).GetAwaiter().GetResult();
+        if (bytes == null || bytes.Length < 800) return null;
+        if (bytes[0] == 0xFF && bytes[1] == 0xD8) return bytes;
+        if (bytes[0] == 0x89 && bytes[1] == 0x50) return bytes;
+        return null;
+      }
+    }
+
+    static void PostMax(string token, string chat, string nick, byte[] jpg)
+    {
+      HttpRequestMessage slot = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/uploads?type=image");
+      slot.Headers.TryAddWithoutValidation("Authorization", token);
+      JObject info = JObject.Parse(Send(slot));
+      string upload = (string)info["url"];
+      string photo = (string)info["token"];
+      if (upload == null || upload.Length == 0) throw new Exception("MAX не дал адрес загрузки.");
+      MultipartFormDataContent form = new MultipartFormDataContent();
+      ByteArrayContent file = new ByteArrayContent(jpg);
+      file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+      form.Add(file, "data", "picture.jpg");
+      HttpRequestMessage up = new HttpRequestMessage(HttpMethod.Post, upload);
+      up.Content = form;
+      string uploaded = Send(up);
+      if (photo == null || photo.Length == 0)
+      {
+        JObject again = JObject.Parse(uploaded);
+        photo = (string)again["token"];
+      }
+      if (photo == null || photo.Length == 0) throw new Exception("MAX не принял картинку.");
+      Thread.Sleep(1500);
+      string body = "{\"text\":" + JsonConvert.ToString(nick) + ",\"attachments\":[{\"type\":\"image\",\"payload\":{\"token\":" + JsonConvert.ToString(photo) + "}}]}";
+      HttpRequestMessage msg = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/messages?chat_id=" + Uri.EscapeDataString(chat));
+      msg.Headers.TryAddWithoutValidation("Authorization", token);
+      msg.Content = new StringContent(body, Encoding.UTF8, "application/json");
+      try
+      {
+        Send(msg);
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (note.IndexOf("not.ready", StringComparison.OrdinalIgnoreCase) < 0 && note.IndexOf("attachment", StringComparison.OrdinalIgnoreCase) < 0) throw;
+        Thread.Sleep(2000);
+        HttpRequestMessage retry = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/messages?chat_id=" + Uri.EscapeDataString(chat));
+        retry.Headers.TryAddWithoutValidation("Authorization", token);
+        retry.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        Send(retry);
       }
     }
 

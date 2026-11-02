@@ -11258,6 +11258,7 @@ namespace Rech
           byte[] jpg = DrawPicture(drawPrompt);
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
           PostMax(token, chatId, nick, jpg);
+          Tell("Люси", nick + ", картинка уже в группе.", false);
         }
         catch (Exception ex)
         {
@@ -11311,6 +11312,27 @@ namespace Rech
       }
     }
 
+    static string PhotoToken(JObject obj, out JToken photos)
+    {
+      photos = null;
+      if (obj == null) return "";
+      JObject map = obj["photos"] as JObject;
+      if (map != null)
+      {
+        foreach (JProperty prop in map.Properties())
+        {
+          string inner = prop.Value == null ? "" : (string)prop.Value["token"];
+          if (inner != null && inner.Length > 0)
+          {
+            photos = map;
+            return inner;
+          }
+        }
+      }
+      string token = (string)obj["token"];
+      return token == null ? "" : token;
+    }
+
     static void PostMax(string token, string chat, string nick, byte[] jpg)
     {
       HttpRequestMessage slot = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/uploads?type=image");
@@ -11326,14 +11348,20 @@ namespace Rech
       HttpRequestMessage up = new HttpRequestMessage(HttpMethod.Post, upload);
       up.Content = form;
       string uploaded = Send(up);
-      if (photo == null || photo.Length == 0)
+      JObject again = null;
+      try { again = JObject.Parse(uploaded); } catch { }
+      JToken photos = null;
+      string fromFile = PhotoToken(again, out photos);
+      if (fromFile.Length > 0) photo = fromFile;
+      if ((photo == null || photo.Length == 0) && photos == null)
       {
-        JObject again = JObject.Parse(uploaded);
-        photo = (string)again["token"];
+        string snippet = uploaded == null ? "" : uploaded.Replace("\r", " ").Replace("\n", " ");
+        if (snippet.Length > 90) snippet = snippet.Substring(0, 90);
+        throw new Exception("MAX не принял картинку. " + snippet);
       }
-      if (photo == null || photo.Length == 0) throw new Exception("MAX не принял картинку.");
       Thread.Sleep(1500);
-      string body = "{\"text\":" + JsonConvert.ToString(nick) + ",\"attachments\":[{\"type\":\"image\",\"payload\":{\"token\":" + JsonConvert.ToString(photo) + "}}]}";
+      string payload = photos != null ? "{\"photos\":" + photos.ToString(Newtonsoft.Json.Formatting.None) + "}" : "{\"token\":" + JsonConvert.ToString(photo) + "}";
+      string body = "{\"text\":" + JsonConvert.ToString(nick) + ",\"attachments\":[{\"type\":\"image\",\"payload\":" + payload + "}]}";
       HttpRequestMessage msg = new HttpRequestMessage(HttpMethod.Post, "https://platform-api2.max.ru/messages?chat_id=" + Uri.EscapeDataString(chat));
       msg.Headers.TryAddWithoutValidation("Authorization", token);
       msg.Content = new StringContent(body, Encoding.UTF8, "application/json");

@@ -12,6 +12,7 @@ using System.IO.Compression;
 using System.Media;
 using System.Net;
 using System.Net.Http;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -8618,7 +8619,18 @@ namespace Rech
           if (note == null || note.Length == 0 || IsDisposed) return;
           try
           {
-            BeginInvoke(new Action(delegate { if (lucyState != null) lucyState.Text = note; }));
+            BeginInvoke(new Action(delegate
+            {
+              if (lucyState != null) lucyState.Text = note;
+              ChatMessage fail = new ChatMessage();
+              fail.Id = "lucy-fail:" + Guid.NewGuid().ToString("N");
+              fail.Platform = "lucy";
+              fail.Author = "Люси";
+              fail.Text = note;
+              fail.Ts = Net.Now();
+              fail.Fresh = false;
+              AddMessage(fail);
+            }));
           }
           catch
           {
@@ -10573,7 +10585,7 @@ namespace Rech
       {
         say("Прошу код у Twitch…");
         UserCode = "";
-        string scopes = bot ? "user:write:chat moderator:manage:banned_users" : "channel:read:redemptions channel:manage:redemptions";
+        string scopes = bot ? "user:write:chat chat:edit moderator:manage:banned_users" : "channel:read:redemptions channel:manage:redemptions";
         string body = "client_id=" + Uri.EscapeDataString(clientId) + "&scopes=" + Uri.EscapeDataString(scopes);
         string json = PostForm("https://id.twitch.tv/oauth2/device", body);
         JObject root = JObject.Parse(json);
@@ -10717,6 +10729,31 @@ namespace Rech
       if (client == null || client.Length == 0) return "В Twitch не написала: нет Client ID.";
       try
       {
+        if (Regex.IsMatch(text, "https?://|t\\.me/|vk\\.ru/|vk\\.com/", RegexOptions.IgnoreCase))
+        {
+          string nick;
+          lock (gate) nick = botLogin;
+          if (nick == null || nick.Length == 0 || Regex.IsMatch(nick, "^\\d+$"))
+          {
+            JObject me = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users", token, client));
+            nick = (string)me.SelectToken("data[0].login");
+            if (nick != null && nick.Length > 0) lock (gate) botLogin = nick;
+          }
+          try
+          {
+            SendIrc(token, nick, channel, text);
+            BotStatus = "Написала ссылку в чат Twitch.";
+            return "";
+          }
+          catch (Exception ircFail)
+          {
+            string helix = SendChat(text, token, refresh, client, channel, sender, true);
+            string why = ircFail.Message == null ? "" : ircFail.Message;
+            if (helix == null || helix.Length == 0) return "";
+            if (why.IndexOf("ещё раз", StringComparison.OrdinalIgnoreCase) >= 0) return "Ссылку Twitch задержал. " + why;
+            return helix;
+          }
+        }
         return SendChat(text, token, refresh, client, channel, sender, true);
       }
       catch (Exception ex)
@@ -10952,6 +10989,62 @@ namespace Rech
       if (why == null) why = "не пустил";
       if (why.IndexOf("moderat", StringComparison.OrdinalIgnoreCase) >= 0) return "Twitch не пустил. Сделай аккаунт Lucy модератором канала.";
       return "Twitch не пустил: " + why;
+    }
+
+    static void SendIrc(string token, string nick, string channel, string text)
+    {
+      if (token == null || token.Length == 0) throw new Exception("нет ключа");
+      if (nick == null || nick.Length == 0) nick = "lucy";
+      nick = Regex.Replace(nick, "[^a-zA-Z0-9_]", "");
+      if (nick.Length == 0) nick = "lucy";
+      text = text.Replace("\r", " ").Replace("\n", " ");
+      TcpClient tcp = new TcpClient();
+      try
+      {
+        tcp.Connect("irc.chat.twitch.tv", 6697);
+        SslStream ssl = new SslStream(tcp.GetStream(), false);
+        ssl.AuthenticateAsClient("irc.chat.twitch.tv");
+        ssl.ReadTimeout = 5000;
+        ssl.WriteTimeout = 5000;
+        Action<string> write = delegate(string line)
+        {
+          byte[] raw = Encoding.UTF8.GetBytes(line + "\r\n");
+          ssl.Write(raw, 0, raw.Length);
+        };
+        string pass = token.StartsWith("oauth:", StringComparison.OrdinalIgnoreCase) ? token : "oauth:" + token;
+        write("PASS " + pass);
+        write("NICK " + nick);
+        StringBuilder got = new StringBuilder();
+        byte[] buf = new byte[4096];
+        DateTime until = DateTime.UtcNow.AddSeconds(5);
+        bool ready = false;
+        while (DateTime.UtcNow < until)
+        {
+          int n = 0;
+          try { n = ssl.Read(buf, 0, buf.Length); } catch { break; }
+          if (n <= 0) break;
+          got.Append(Encoding.UTF8.GetString(buf, 0, n));
+          string all = got.ToString();
+          if (all.IndexOf("Login authentication failed", StringComparison.OrdinalIgnoreCase) >= 0 || all.IndexOf("Improperly formatted auth", StringComparison.OrdinalIgnoreCase) >= 0)
+          {
+            throw new Exception("ключ Lucy старый, зайди её аккаунтом ещё раз");
+          }
+          if (all.IndexOf(" PING ", StringComparison.Ordinal) >= 0 || all.StartsWith("PING", StringComparison.Ordinal)) write("PONG :tmi.twitch.tv");
+          if (all.IndexOf(" 001 ", StringComparison.Ordinal) >= 0)
+          {
+            ready = true;
+            break;
+          }
+        }
+        if (!ready) throw new Exception("чат Twitch не ответил");
+        write("JOIN #" + channel);
+        write("PRIVMSG #" + channel + " :" + text);
+        Thread.Sleep(400);
+      }
+      finally
+      {
+        try { tcp.Close(); } catch { }
+      }
     }
 
     static string Broad(string token, string client, string channel)

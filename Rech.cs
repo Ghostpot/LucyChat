@@ -11608,13 +11608,13 @@ namespace Rech
         Tell("Люси", "Награда картинки пришла, но текста для рисунка нет.", false);
         return;
       }
-      string key = (user == null ? "" : user.Trim().ToLowerInvariant()) + "|" + (prompt == null ? "" : prompt.Trim().ToLowerInvariant());
+      string flight = (vk ? "vk" : "tg") + "|" + (user == null ? "" : user.Trim().ToLowerInvariant());
       long now = DateTime.UtcNow.Ticks;
       lock (gate)
       {
         long seenAt;
-        if (painted.TryGetValue(key, out seenAt) && now - seenAt < TimeSpan.TicksPerMinute * 3) return;
-        painted[key] = now;
+        if (painted.TryGetValue(flight, out seenAt) && now - seenAt < TimeSpan.TicksPerSecond * 45) return;
+        painted[flight] = now;
         if (painted.Count > 80) painted.Clear();
       }
       Hide(prompt);
@@ -11686,7 +11686,8 @@ namespace Rech
       string drawVk = vkToken;
       string drawGroup = vkGroup;
       bool drawVkSide = vk;
-      Tell("Люси", nick + ", картинку выложу сюда: " + link, true);
+      string where = drawVkSide ? "в истории сообщества: " : "сюда: ";
+      Tell("Люси", nick + ", картинку выложу " + where + link, true);
       Thread draw = new Thread(delegate()
       {
         try
@@ -11695,7 +11696,7 @@ namespace Rech
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
           if (drawVkSide) PostVk(drawVk, drawGroup, nick, jpg);
           else PostTelegram(token, chatId, nick, jpg);
-          Tell("Люси", nick + ", картинка уже " + (drawVkSide ? "во ВК." : "в Telegram."), false);
+          Tell("Люси", nick + ", картинка уже " + (drawVkSide ? "в историях VK." : "в Telegram."), false);
         }
         catch (Exception ex)
         {
@@ -11954,20 +11955,51 @@ namespace Rech
 
     static void PostVkByMessage(string token, long id, string nick, byte[] jpg)
     {
+      byte[] card = SignJpg(jpg, nick);
       string group = id.ToString(CultureInfo.InvariantCulture);
-      JObject slot;
+      JObject slot = VkCall(token, "stories.getPhotoUploadServer", "group_id=" + group + "&add_to_news=1");
+      string upload = slot == null ? "" : (string)slot.SelectToken("response.upload_url");
+      if (upload == null || upload.Length == 0) throw new Exception("ВК не дал адрес истории.");
+      MultipartFormDataContent form = new MultipartFormDataContent();
+      ByteArrayContent file = new ByteArrayContent(card);
+      file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+      form.Add(file, "file", "picture.jpg");
+      HttpRequestMessage up = new HttpRequestMessage(HttpMethod.Post, upload);
+      up.Content = form;
+      JObject uploaded = JObject.Parse(Send(up));
+      string result = (string)uploaded.SelectToken("response.upload_result");
+      if (result == null || result.Length == 0) throw new Exception("ВК не принял файл истории.");
+      VkCall(token, "stories.save", "upload_results=" + Uri.EscapeDataString(result));
+    }
+
+    static byte[] SignJpg(byte[] jpg, string nick)
+    {
+      if (jpg == null || nick == null || nick.Trim().Length == 0) return jpg;
       try
       {
-        slot = VkCall(token, "photos.getMessagesUploadServer", "group_id=" + group);
+        using (MemoryStream input = new MemoryStream(jpg))
+        using (Image image = Image.FromStream(input))
+        using (Bitmap bmp = new Bitmap(image))
+        using (Graphics g = Graphics.FromImage(bmp))
+        using (Font font = new Font(FontFamily.GenericSansSerif, Math.Max(18f, bmp.Width / 28f), FontStyle.Bold, GraphicsUnit.Pixel))
+        {
+          string line = nick.Trim();
+          SizeF size = g.MeasureString(line, font);
+          float x = 18f;
+          float y = bmp.Height - size.Height - 24f;
+          g.FillRectangle(new SolidBrush(Color.FromArgb(170, 0, 0, 0)), x - 8f, y - 6f, size.Width + 20f, size.Height + 12f);
+          g.DrawString(line, font, Brushes.White, x, y);
+          using (MemoryStream output = new MemoryStream())
+          {
+            bmp.Save(output, ImageFormat.Jpeg);
+            return output.ToArray();
+          }
+        }
       }
-      catch (Exception ex)
+      catch
       {
-        string note = ex.Message == null ? "" : ex.Message;
-        if (note.IndexOf("messages", StringComparison.OrdinalIgnoreCase) < 0) throw;
-        VkCall(token, "groups.edit", "group_id=" + group + "&messages=1");
-        slot = VkCall(token, "photos.getMessagesUploadServer", "group_id=" + group);
+        return jpg;
       }
-      FinishVkPhoto(token, id, nick, jpg, slot, "photos.saveMessagesPhoto", false);
     }
 
     static void FinishVkPhoto(string token, long id, string nick, byte[] jpg, JObject slot, string saveMethod, bool withGroup)

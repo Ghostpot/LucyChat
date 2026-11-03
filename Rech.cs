@@ -11796,6 +11796,10 @@ namespace Rech
     static string PaintWhy(string note)
     {
       if (note == null || note.Length == 0) return "не вышло";
+      if (note.IndexOf("403", StringComparison.Ordinal) >= 0 || note.IndexOf("Forbidden", StringComparison.OrdinalIgnoreCase) >= 0)
+      {
+        return "у приложения нет прав Диска. Добавь запись, чтение и информацию о Диске, потом возьми новый токен.";
+      }
       if (note.IndexOf("NSFW", StringComparison.OrdinalIgnoreCase) >= 0 || note.IndexOf("safety", StringComparison.OrdinalIgnoreCase) >= 0)
       {
         return "Cloudflare отказался рисовать этот запрос. Напиши проще, без намёков.";
@@ -11992,7 +11996,8 @@ namespace Rech
       {
         string why = ex.Message == null ? "" : ex.Message;
         if (token != null && token.Length > 0) why = why.Replace(token, "token");
-        if (why.IndexOf("401", StringComparison.Ordinal) >= 0) return "Диск не пустил. Нажми «Разрешить Диск» и вставь access_token со страницы. ClientID и секрет не подходят.";
+        if (why.IndexOf("401", StringComparison.Ordinal) >= 0) return "Диск не пустил. Нажми «Разрешить Диск» и вставь новый access_token. ClientID и секрет не подходят.";
+        if (why.IndexOf("403", StringComparison.Ordinal) >= 0 || why.IndexOf("Forbidden", StringComparison.OrdinalIgnoreCase) >= 0) return "Прав не хватает. В приложении Lucy_img добавь три доступа: «Запись в любом месте на Диске», «Чтение всего Диска» и «Доступ к информации о Диске». Потом снова нажми «Разрешить Диск» и вставь новый токен. Старый не заработает.";
         if (why.Length > 180) why = why.Substring(0, 180);
         return "Диск: " + why;
       }

@@ -570,6 +570,10 @@ namespace Rech
     public string SongReward;
     public string LucyReward;
     public string PictureReward;
+    public string PictureVk;
+    public string VkToken;
+    public string VkGroup;
+    public string VkLink;
     public string MaxLink;
     public string MaxChat;
     public string MaxToken;
@@ -5427,6 +5431,10 @@ namespace Rech
     TextBox songRewardBox;
     TextBox lucyRewardBox;
     TextBox picRewardBox;
+    TextBox picVkBox;
+    TextBox vkLinkBox;
+    TextBox vkGroupBox;
+    TextBox vkTokenBox;
     TextBox maxLinkBox;
     TextBox maxChatBox;
     TextBox maxTokenBox;
@@ -5878,11 +5886,29 @@ namespace Rech
       StyleBox(lucyRewardBox);
       lucyRewardBox.Text = "Поговорить с Люси";
       Place(right, lucyRewardBox, 14, ref y, 28);
-      Place(right, MakeMute("Награда картинки. Подойдёт «Картинка» и «Твоя Генерация»"), 14, ref y, 18);
+      Place(right, MakeMute("Награда Telegram. Подойдёт «Картинка TG» и «Твоя Генерация»"), 14, ref y, 18);
       picRewardBox = new TextBox();
       StyleBox(picRewardBox);
-      picRewardBox.Text = "Картинка";
+      picRewardBox.Text = "Картинка TG";
       Place(right, picRewardBox, 14, ref y, 28);
+      Place(right, MakeMute("Награда ВК. На Twitch назови её «Картинка VK»"), 14, ref y, 18);
+      picVkBox = new TextBox();
+      StyleBox(picVkBox);
+      picVkBox.Text = "Картинка VK";
+      Place(right, picVkBox, 14, ref y, 28);
+      Place(right, MakeMute("Куда Люси отправит смотреть картинку ВК"), 14, ref y, 18);
+      vkLinkBox = new TextBox();
+      StyleBox(vkLinkBox);
+      vkLinkBox.Text = "https://vk.ru/ghostpotplay";
+      Place(right, vkLinkBox, 14, ref y, 28);
+      Place(right, MakeMute("Группа ВК и ключ администратора. В чат ключ не пиши"), 14, ref y, 18);
+      vkGroupBox = new TextBox();
+      StyleBox(vkGroupBox);
+      vkGroupBox.Text = "ghostpotplay";
+      Place(right, vkGroupBox, 14, ref y, 28);
+      vkTokenBox = new TextBox();
+      StyleBox(vkTokenBox);
+      Place(right, vkTokenBox, 14, ref y, 28);
       Place(right, MakeMute("Куда Люси отправит смотреть картинку"), 14, ref y, 18);
       maxLinkBox = new TextBox();
       StyleBox(maxLinkBox);
@@ -6382,6 +6408,10 @@ namespace Rech
       if (songRewardBox != null) songRewardBox.TextChanged += save;
       if (lucyRewardBox != null) lucyRewardBox.TextChanged += save;
       if (picRewardBox != null) picRewardBox.TextChanged += save;
+      if (picVkBox != null) picVkBox.TextChanged += save;
+      if (vkLinkBox != null) vkLinkBox.TextChanged += save;
+      if (vkGroupBox != null) vkGroupBox.TextChanged += save;
+      if (vkTokenBox != null) vkTokenBox.TextChanged += save;
       if (maxLinkBox != null) maxLinkBox.TextChanged += save;
       if (maxChatBox != null) maxChatBox.TextChanged += save;
       if (maxTokenBox != null) maxTokenBox.TextChanged += save;
@@ -6595,7 +6625,11 @@ namespace Rech
       twitchBotLogin = settings.TwitchBotLogin == null ? "" : settings.TwitchBotLogin;
       if (songRewardBox != null) songRewardBox.Text = settings.SongReward == null || settings.SongReward.Length == 0 ? "Заказать песню" : settings.SongReward;
       if (lucyRewardBox != null) lucyRewardBox.Text = settings.LucyReward == null || settings.LucyReward.Length == 0 ? "Поговорить с Люси" : settings.LucyReward;
-      if (picRewardBox != null) picRewardBox.Text = settings.PictureReward == null || settings.PictureReward.Length == 0 ? "Картинка" : settings.PictureReward;
+      if (picRewardBox != null) picRewardBox.Text = settings.PictureReward == null || settings.PictureReward.Length == 0 ? "Картинка TG" : settings.PictureReward;
+      if (picVkBox != null) picVkBox.Text = settings.PictureVk == null || settings.PictureVk.Length == 0 ? "Картинка VK" : settings.PictureVk;
+      if (vkLinkBox != null) vkLinkBox.Text = settings.VkLink == null || settings.VkLink.Length == 0 ? "https://vk.ru/ghostpotplay" : settings.VkLink;
+      if (vkGroupBox != null) vkGroupBox.Text = settings.VkGroup == null || settings.VkGroup.Length == 0 ? "ghostpotplay" : settings.VkGroup;
+      if (vkTokenBox != null) vkTokenBox.Text = settings.VkToken == null ? "" : settings.VkToken;
       if (maxLinkBox != null)
       {
         string link = settings.MaxLink == null ? "" : settings.MaxLink.Trim();
@@ -7240,8 +7274,8 @@ namespace Rech
         if (Rewards.IsPicture(message.Text))
         {
           string held = Rewards.PicturePrompt(message.Author, message.Text);
-          if (held != null && held.Length > 1) Rewards.Paint(message.Author, held);
-          else Rewards.Paint(message.Author, "");
+          if (held != null && held.Length > 1) Rewards.Paint(message.Author, held, Rewards.IsVkPicture(message.Text));
+          else Rewards.Paint(message.Author, "", Rewards.IsVkPicture(message.Text));
         }
         return;
       }
@@ -7281,8 +7315,8 @@ namespace Rech
         Room.Hear(row.Author, row.Text);
         Rewards.Note(message.Author, message.Text);
       }
-      if (message.Fresh && picturePrompt != null && picturePrompt.Length > 1) Rewards.Paint(message.Author, picturePrompt);
-      else if (message.Fresh && picturePay) Rewards.Paint(message.Author, "");
+      if (message.Fresh && picturePrompt != null && picturePrompt.Length > 1) Rewards.Paint(message.Author, picturePrompt, Rewards.IsVkPicture(message.Text));
+      else if (message.Fresh && picturePay) Rewards.Paint(message.Author, "", Rewards.IsVkPicture(message.Text));
       if (message.Fresh && !quiet) SpeakLater(message);
       if (message.Fresh && !quiet && !mercy) ConsiderLucy(message);
     }
@@ -7360,8 +7394,9 @@ namespace Rech
       if (flat.Length == 0) return false;
       string lucy = lucyRewardBox == null || lucyRewardBox.Text.Trim().Length == 0 ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
       string song = songRewardBox == null || songRewardBox.Text.Trim().Length == 0 ? "Заказать песню" : songRewardBox.Text.Trim();
-      string picture = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
-      return RewardTitle(flat, lucy) || RewardTitle(flat, song) || RewardTitle(flat, picture);
+      string picture = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка TG" : picRewardBox.Text.Trim();
+      string pictureVk = picVkBox == null || picVkBox.Text.Trim().Length == 0 ? "Картинка VK" : picVkBox.Text.Trim();
+      return RewardTitle(flat, lucy) || RewardTitle(flat, song) || RewardTitle(flat, picture) || RewardTitle(flat, pictureVk);
     }
 
     static bool RewardTitle(string text, string title)
@@ -8479,7 +8514,11 @@ namespace Rech
       prefs.Refresh = twitchRefresh == null ? "" : twitchRefresh;
       prefs.SongTitle = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       prefs.LucyTitle = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
-      prefs.PictureTitle = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
+      prefs.PictureTitle = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка TG" : picRewardBox.Text.Trim();
+      prefs.PictureVk = picVkBox == null || picVkBox.Text.Trim().Length == 0 ? "Картинка VK" : picVkBox.Text.Trim();
+      prefs.VkLink = vkLinkBox == null || vkLinkBox.Text.Trim().Length == 0 ? "https://vk.ru/ghostpotplay" : vkLinkBox.Text.Trim();
+      prefs.VkGroup = vkGroupBox == null || vkGroupBox.Text.Trim().Length == 0 ? "ghostpotplay" : vkGroupBox.Text.Trim();
+      prefs.VkToken = vkTokenBox == null ? "" : vkTokenBox.Text.Trim();
       prefs.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : maxLinkBox.Text.Trim();
       prefs.MaxChat = maxChatBox == null || maxChatBox.Text.Trim().Length == 0 ? "@ghostpot_chat" : maxChatBox.Text.Trim();
       prefs.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
@@ -8675,7 +8714,11 @@ namespace Rech
       settings.TwitchBotLogin = twitchBotLogin == null ? "" : twitchBotLogin;
       settings.SongReward = songRewardBox == null ? "Заказать песню" : songRewardBox.Text.Trim();
       settings.LucyReward = lucyRewardBox == null ? "Поговорить с Люси" : lucyRewardBox.Text.Trim();
-      settings.PictureReward = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка" : picRewardBox.Text.Trim();
+      settings.PictureReward = picRewardBox == null || picRewardBox.Text.Trim().Length == 0 ? "Картинка TG" : picRewardBox.Text.Trim();
+      settings.PictureVk = picVkBox == null || picVkBox.Text.Trim().Length == 0 ? "Картинка VK" : picVkBox.Text.Trim();
+      settings.VkLink = vkLinkBox == null || vkLinkBox.Text.Trim().Length == 0 ? "https://vk.ru/ghostpotplay" : vkLinkBox.Text.Trim();
+      settings.VkGroup = vkGroupBox == null || vkGroupBox.Text.Trim().Length == 0 ? "ghostpotplay" : vkGroupBox.Text.Trim();
+      settings.VkToken = vkTokenBox == null ? "" : vkTokenBox.Text.Trim();
       settings.MaxLink = maxLinkBox == null || maxLinkBox.Text.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : maxLinkBox.Text.Trim();
       settings.MaxChat = maxChatBox == null || maxChatBox.Text.Trim().Length == 0 ? "@ghostpot_chat" : maxChatBox.Text.Trim();
       settings.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
@@ -10232,6 +10275,10 @@ namespace Rech
     public string SongTitle;
     public string LucyTitle;
     public string PictureTitle;
+    public string PictureVk;
+    public string VkToken;
+    public string VkGroup;
+    public string VkLink;
     public string MaxLink;
     public string MaxChat;
     public string MaxToken;
@@ -10316,10 +10363,10 @@ namespace Rech
       }
     }
 
-    public static bool Take(string nick)
+    public static bool Take(string nick, string slot)
     {
-      string key = nick == null ? "" : nick.Trim().ToLowerInvariant();
-      if (key.Length == 0) return false;
+      string key = (slot == null ? "tg" : slot) + ":" + (nick == null ? "" : nick.Trim().ToLowerInvariant());
+      if (key.EndsWith(":")) return false;
       lock (gate)
       {
         Dictionary<string, int> map = Load();
@@ -10332,10 +10379,10 @@ namespace Rech
       }
     }
 
-    public static void GiveBack(string nick)
+    public static void GiveBack(string nick, string slot)
     {
-      string key = nick == null ? "" : nick.Trim().ToLowerInvariant();
-      if (key.Length == 0) return;
+      string key = (slot == null ? "tg" : slot) + ":" + (nick == null ? "" : nick.Trim().ToLowerInvariant());
+      if (key.EndsWith(":")) return;
       lock (gate)
       {
         Dictionary<string, int> map = Load();
@@ -11258,8 +11305,10 @@ namespace Rech
         talk.Start();
         return;
       }
-      string pictureTitle = current.PictureTitle == null || current.PictureTitle.Trim().Length == 0 ? "Картинка" : current.PictureTitle.Trim();
-      if (!SameTitle(title, pictureTitle) && !PictureName(title))
+      string pictureTitle = current.PictureTitle == null || current.PictureTitle.Trim().Length == 0 ? "Картинка TG" : current.PictureTitle.Trim();
+      string vkTitle = current.PictureVk == null || current.PictureVk.Trim().Length == 0 ? "Картинка VK" : current.PictureVk.Trim();
+      bool toVk = SameTitle(title, vkTitle) || VkWord(title);
+      if (!toVk && !SameTitle(title, pictureTitle) && !PictureName(title))
       {
         Tell("Люси", "Пришла награда «" + (title == null ? "" : title) + "». Это не картинка.", false);
         return;
@@ -11279,7 +11328,7 @@ namespace Rech
         Tell("Люси", user + ", такое рисовать не буду.", true);
         return;
       }
-      Paint(user, prompt, current, broadcaster, rewardId, redemption);
+      Paint(user, prompt, current, broadcaster, rewardId, redemption, toVk);
     }
 
     static bool RoughPicture(string text)
@@ -11303,8 +11352,31 @@ namespace Rech
       lock (gate) lastPrompt[key] = line;
     }
 
+    static bool VkWord(string title)
+    {
+      if (title == null) return false;
+      string low = title.ToLowerInvariant();
+      return low.Contains(" vk") || low.EndsWith("vk") || low.Contains("вк");
+    }
+
+    public static bool IsVkPicture(string text)
+    {
+      if (text == null) return false;
+      string flat = Regex.Replace(text, "\\s+", " ").Trim();
+      if (flat.Length == 0) return false;
+      string title;
+      lock (gate) title = prefs.PictureVk;
+      if (title == null || title.Trim().Length < 3) title = "Картинка VK";
+      if (flat.IndexOf(title.Trim(), StringComparison.OrdinalIgnoreCase) >= 0) return true;
+      bool money = Regex.IsMatch(flat, "\\d[\\d\\s\\u00a0]*\\s*(usd|rub|eur|₽|\\$)", RegexOptions.IgnoreCase);
+      if (!money) return false;
+      string low = flat.ToLowerInvariant();
+      return low.Contains(" vk") || low.EndsWith("vk") || low.Contains(" вк") || low.Contains("вконтакте");
+    }
+
     public static bool IsPicture(string text)
     {
+      if (IsVkPicture(text)) return true;
       if (text == null) return false;
       string flat = Regex.Replace(text, "\\s+", " ").Trim();
       if (flat.Length == 0) return false;
@@ -11324,11 +11396,17 @@ namespace Rech
       string stripped = Regex.Replace(flat, "^[\\d\\s\\u00a0]+(?:usd|rub|eur|₽|\\$)?\\.?\\s*", "", RegexOptions.IgnoreCase).Trim();
       string title;
       lock (gate) title = prefs.PictureTitle;
-      if (title == null || title.Trim().Length < 3) title = "Картинка";
+      if (title == null || title.Trim().Length < 3) title = "Картинка TG";
       title = title.Trim();
+      string vkTitle;
+      lock (gate) vkTitle = prefs.PictureVk;
+      if (vkTitle == null || vkTitle.Trim().Length < 3) vkTitle = "Картинка VK";
+      vkTitle = vkTitle.Trim();
       string rest = stripped;
       int at = rest.IndexOf(title, StringComparison.OrdinalIgnoreCase);
       if (at >= 0) rest = (rest.Substring(0, at) + " " + rest.Substring(at + title.Length)).Trim();
+      int vkAt = rest.IndexOf(vkTitle, StringComparison.OrdinalIgnoreCase);
+      if (vkAt >= 0) rest = (rest.Substring(0, vkAt) + " " + rest.Substring(vkAt + vkTitle.Length)).Trim();
       rest = Regex.Replace(rest, "^(usd|rub|eur)\\.?\\s*", "", RegexOptions.IgnoreCase).Trim(' ', '.', ':', '-');
       bool onlyTitle = rest.Length < 2 || string.Equals(rest, title, StringComparison.OrdinalIgnoreCase) || Regex.IsMatch(rest, "^(твоя\\s+)?(генерация|картинка)$", RegexOptions.IgnoreCase);
       if (onlyTitle)
@@ -11347,15 +11425,15 @@ namespace Rech
       return rest.Trim();
     }
 
-    public static void Paint(string user, string prompt)
+    public static void Paint(string user, string prompt, bool vk)
     {
       RewardPrefs current;
       lock (gate) current = prefs;
       if (current == null) return;
-      Paint(user, prompt, current, null, null, null);
+      Paint(user, prompt, current, null, null, null, vk);
     }
 
-    static void Paint(string user, string prompt, RewardPrefs current, string broadcaster, string rewardId, string redemption)
+    static void Paint(string user, string prompt, RewardPrefs current, string broadcaster, string rewardId, string redemption, bool vk)
     {
       if (prompt == null || prompt.Trim().Length < 2)
       {
@@ -11372,41 +11450,62 @@ namespace Rech
         if (painted.Count > 80) painted.Clear();
       }
       Hide(prompt);
-      string link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : current.MaxLink.Trim();
-      string chat = current.MaxChat == null || current.MaxChat.Trim().Length == 0 ? "@ghostpot_chat" : current.MaxChat.Trim();
-      string token = current.MaxToken == null ? "" : current.MaxToken.Trim();
-      if (chat == "72384283996371" || chat.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0) chat = "@ghostpot_chat";
-      if (link.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0 || link.IndexOf("max.ru", StringComparison.OrdinalIgnoreCase) >= 0) link = "https://t.me/ghostpot_chat";
-      if (token.IndexOf(':') < 0)
+      string link;
+      string chat = "";
+      string token = "";
+      string vkToken = "";
+      string vkGroup = "ghostpotplay";
+      if (vk)
       {
-        Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "В поле токена нет ключа бота. Вставь ключ из BotFather для @Ghostpot_img_bot.", false);
-        return;
+        link = current.VkLink == null || current.VkLink.Trim().Length == 0 ? "https://vk.ru/ghostpotplay" : current.VkLink.Trim();
+        vkGroup = current.VkGroup == null || current.VkGroup.Trim().Length == 0 ? "ghostpotplay" : current.VkGroup.Trim();
+        vkToken = current.VkToken == null ? "" : current.VkToken.Trim();
+        if (vkToken.Length < 10)
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", "Нет ключа VK. Вставь ключ администратора сообщества ghostpotplay.", false);
+          return;
+        }
       }
-      if (chat.Length == 0)
+      else
       {
-        Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Не написан чат. Должно быть @ghostpot_chat.", false);
-        return;
+        link = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : current.MaxLink.Trim();
+        chat = current.MaxChat == null || current.MaxChat.Trim().Length == 0 ? "@ghostpot_chat" : current.MaxChat.Trim();
+        token = current.MaxToken == null ? "" : current.MaxToken.Trim();
+        if (chat == "72384283996371" || chat.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0) chat = "@ghostpot_chat";
+        if (link.IndexOf("Ghostpot_img_bot", StringComparison.OrdinalIgnoreCase) >= 0 || link.IndexOf("max.ru", StringComparison.OrdinalIgnoreCase) >= 0) link = "https://t.me/ghostpot_chat";
+        if (token.IndexOf(':') < 0)
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", "В поле токена нет ключа бота. Вставь ключ из BotFather для @Ghostpot_img_bot.", false);
+          return;
+        }
+        if (chat.Length == 0)
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", "Не написан чат. Должно быть @ghostpot_chat.", false);
+          return;
+        }
       }
-      if (!Pictures.Take(user))
+      string slot = vk ? "vk" : "tg";
+      if (!Pictures.Take(user, slot))
       {
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", user + ", на этот ник уже три картинки.", false);
+        Tell("Люси", user + ", на этот ник уже три картинки " + (vk ? "во ВК" : "в Telegram") + ".", false);
         return;
       }
       string account = current.CfAccount == null ? "" : current.CfAccount.Trim();
       string paintKey = current.CfToken == null ? "" : current.CfToken.Trim();
       if (account.Length < 8 || paintKey.Length < 10)
       {
-        Pictures.GiveBack(user);
+        Pictures.GiveBack(user, slot);
         Cancel(current, broadcaster, rewardId, redemption);
         Tell("Люси", "Нет ключа Cloudflare. Вставь Account ID и токен Workers AI.", false);
         return;
       }
       if (!Pictures.TakeDay())
       {
-        Pictures.GiveBack(user);
+        Pictures.GiveBack(user, slot);
         Cancel(current, broadcaster, rewardId, redemption);
         Tell("Люси", "На сегодня 100 картинок уже разобрали.", false);
         return;
@@ -11416,6 +11515,9 @@ namespace Rech
       string drawPrompt = prompt;
       string drawAccount = account;
       string drawKey = paintKey;
+      string drawVk = vkToken;
+      string drawGroup = vkGroup;
+      bool drawVkSide = vk;
       Tell("Люси", nick + ", картинку выложу сюда: " + link, true);
       Thread draw = new Thread(delegate()
       {
@@ -11423,16 +11525,18 @@ namespace Rech
         {
           byte[] jpg = DrawPicture(drawPrompt, drawAccount, drawKey);
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
-          PostTelegram(token, chatId, nick, jpg);
-          Tell("Люси", nick + ", картинка уже в Telegram.", false);
+          if (drawVkSide) PostVk(drawVk, drawGroup, nick, jpg);
+          else PostTelegram(token, chatId, nick, jpg);
+          Tell("Люси", nick + ", картинка уже " + (drawVkSide ? "во ВК." : "в Telegram."), false);
         }
         catch (Exception ex)
         {
-          Pictures.GiveBack(nick);
+          Pictures.GiveBack(nick, slot);
           Pictures.GiveDay();
           Cancel(current, broadcaster, rewardId, redemption);
           string why = ex.Message == null ? "" : ex.Message;
           if (drawKey.Length > 0) why = why.Replace(drawKey, "token");
+          if (drawVk.Length > 0) why = why.Replace(drawVk, "token");
           if (why.Length > 140) why = why.Substring(0, 140);
           Tell("Люси", nick + ", картинка не вышла. " + why, false);
         }
@@ -11621,6 +11725,68 @@ namespace Rech
       }
       string token = (string)obj["token"];
       return token == null ? "" : token;
+    }
+
+    static void PostVk(string token, string group, string nick, byte[] jpg)
+    {
+      long id = VkGroup(token, group);
+      if (id == 0) throw new Exception("ВК не нашёл сообщество " + group);
+      JObject slot = VkCall(token, "photos.getWallUploadServer", "group_id=" + id.ToString(CultureInfo.InvariantCulture));
+      string upload = (string)slot.SelectToken("response.upload_url");
+      if (upload == null || upload.Length == 0) throw new Exception("ВК не дал адрес загрузки.");
+      MultipartFormDataContent form = new MultipartFormDataContent();
+      ByteArrayContent file = new ByteArrayContent(jpg);
+      file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+      form.Add(file, "photo", "picture.jpg");
+      HttpRequestMessage up = new HttpRequestMessage(HttpMethod.Post, upload);
+      up.Content = form;
+      string uploaded = Send(up);
+      JObject photo = JObject.Parse(uploaded);
+      string server = photo["server"] == null ? "" : photo["server"].ToString();
+      string hash = photo["hash"] == null ? "" : photo["hash"].ToString();
+      string blob = photo["photo"] == null ? "" : photo["photo"].ToString();
+      if (server.Length == 0 || blob.Length == 0) throw new Exception("ВК не принял файл.");
+      string saveQuery = "group_id=" + id.ToString(CultureInfo.InvariantCulture) + "&server=" + Uri.EscapeDataString(server) + "&photo=" + Uri.EscapeDataString(blob) + "&hash=" + Uri.EscapeDataString(hash);
+      JObject saved = VkCall(token, "photos.saveWallPhoto", saveQuery);
+      JToken first = saved.SelectToken("response[0]");
+      if (first == null) throw new Exception("ВК не сохранил фото.");
+      string owner = first["owner_id"].ToString();
+      string pid = first["id"].ToString();
+      string message = Uri.EscapeDataString(nick == null ? "" : nick);
+      VkCall(token, "wall.post", "owner_id=-" + id.ToString(CultureInfo.InvariantCulture) + "&from_group=1&message=" + message + "&attachments=photo" + owner + "_" + pid);
+    }
+
+    static long VkGroup(string token, string group)
+    {
+      long id;
+      string bare = group == null ? "" : group.Trim().TrimStart('-');
+      if (long.TryParse(bare, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) && id > 0) return id;
+      JObject info = VkCall(token, "groups.getById", "group_id=" + Uri.EscapeDataString(bare));
+      JToken found = info.SelectToken("response.groups[0].id");
+      if (found == null) found = info.SelectToken("response[0].id");
+      if (found == null) return 0;
+      return (long)found;
+    }
+
+    static JObject VkCall(string token, string method, string query)
+    {
+      string url = "https://api.vk.com/method/" + method + "?access_token=" + Uri.EscapeDataString(token) + "&v=5.199";
+      if (query != null && query.Length > 0) url = url + "&" + query;
+      using (HttpClient client = new HttpClient())
+      {
+        client.Timeout = TimeSpan.FromSeconds(40);
+        string json = client.GetStringAsync(url).GetAwaiter().GetResult();
+        JObject obj = JObject.Parse(json);
+        JToken err = obj["error"];
+        if (err != null)
+        {
+          string note = (string)err["error_msg"];
+          int code = err["error_code"] == null ? 0 : (int)err["error_code"];
+          if (code == 27) throw new Exception("Это ключ сообщества. Для картинки нужен ключ пользователя, который админ ghostpotplay, с правами wall, photos и groups.");
+          throw new Exception("ВК " + code.ToString(CultureInfo.InvariantCulture) + " " + (note == null ? "" : note));
+        }
+        return obj;
+      }
     }
 
     static void PostTelegram(string token, string chat, string nick, byte[] jpg)

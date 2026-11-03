@@ -12156,7 +12156,7 @@ namespace Rech
       host = "";
       why = "нужна одна ссылка на песню с YouTube, Rutube или VK.";
       if (text == null) return false;
-      Match yt = Regex.Match(text, "(?:youtube\\.com/(?:watch\\?v=|shorts/|embed/)|youtu\\.be/)([A-Za-z0-9_-]{6,16})", RegexOptions.IgnoreCase);
+      Match yt = Regex.Match(text, "(?:youtube\\.com/(?:watch\\?v=|shorts/|embed/|live/)|youtu\\.be/)([A-Za-z0-9_-]{6,16})", RegexOptions.IgnoreCase);
       if (yt.Success)
       {
         if (current != null && !current.Youtube)
@@ -12180,7 +12180,8 @@ namespace Rech
         host = "Rutube";
         return true;
       }
-      Match vk = Regex.Match(text, "(?:vk\\.com|vkvideo\\.ru)/video(-?\\d+)_(\\d+)", RegexOptions.IgnoreCase);
+      Match vk = Regex.Match(text, "(?:vk\\.com|vk\\.ru|vkvideo\\.ru)/(?:video|clip)(-?\\d+)_(\\d+)", RegexOptions.IgnoreCase);
+      if (!vk.Success) vk = Regex.Match(text, "[?&]z=video(-?\\d+)_(\\d+)", RegexOptions.IgnoreCase);
       if (vk.Success)
       {
         if (current != null && !current.Vk)
@@ -12578,7 +12579,18 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>var last='';var api=false;var player=null;var closing=false;var vol=100;function onYouTubeIframeAPIReady(){api=true;}function applyVol(n){vol=n;if(player&&player.setVolume){try{player.setVolume(n);if(n>0)player.unMute();}catch(e){}}}function clearBox(){if(player&&player.destroy){try{player.destroy();}catch(e){}}player=null;var box=document.getElementById('box');if(box)box.innerHTML='';}function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}function show(j){clearBox();closing=false;if(typeof j.volume==='number')vol=j.volume;var id='';var m=(j.embed||'').match(/embed\\/([^?&#]+)/);if(m)id=m[1];if(j.host==='YouTube'&&id&&api&&window.YT&&YT.Player){document.getElementById('box').innerHTML='<div id=\"yt\"></div>';player=new YT.Player('yt',{width:'100%',height:'100%',videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(vol);e.target.playVideo();}catch(err){}},onError:function(){ended();},onStateChange:function(e){if(e.data!==0)return;var d=0,t=0;try{d=player.getDuration();t=player.getCurrentTime();}catch(err){}if(d>1&&t+1.5<d)return;ended();}}});return;}var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=j.embed;document.getElementById('box').appendChild(f);}async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();</script></body></html>";
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block;background:#000}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>"
+        + "var last='';var player=null;var closing=false;var vol=100;var tried=false;"
+        + "function onYouTubeIframeAPIReady(){}"
+        + "function applyVol(n){vol=n;if(player&&player.setVolume){try{player.setVolume(n);if(n>0)player.unMute();}catch(e){}}}"
+        + "function clearBox(){if(player&&player.destroy){try{player.destroy();}catch(e){}}player=null;var box=document.getElementById('box');if(box)box.innerHTML='';}"
+        + "function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}"
+        + "function frame(src){clearBox();var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=src;document.getElementById('box').appendChild(f);}"
+        + "function show(j){closing=false;tried=false;if(typeof j.volume==='number')vol=j.volume;var embed=j.embed||'';var m=embed.match(/embed\\/([^?&#]+)/);var id=m?m[1]:'';"
+        + "if(j.host==='YouTube'&&id&&window.YT&&YT.Player){clearBox();document.getElementById('box').innerHTML='<div id=\"yt\"></div>';var born=Date.now();player=new YT.Player('yt',{width:'100%',height:'100%',videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1,origin:location.origin,enablejsapi:1,widget_referrer:location.href},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(vol);e.target.playVideo();}catch(err){}},onError:function(){if(tried)return;tried=true;frame('https://www.youtube-nocookie.com/embed/'+id+'?autoplay=1&rel=0&playsinline=1');},onStateChange:function(e){if(e.data!==0)return;if(Date.now()-born<8000)return;var d=0,t=0;try{d=player.getDuration();t=player.getCurrentTime();}catch(err){}if(d>1&&t+1.5<d)return;ended();}}});return;}"
+        + "var src=embed;if(j.host==='YouTube'&&id)src='https://www.youtube-nocookie.com/embed/'+id+'?autoplay=1&rel=0&playsinline=1';frame(src);}"
+        + "async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();"
+        + "</script></body></html>";
     }
 
     static string FeedJsonText(OverlayStyle style, List<OverlayLine> lines)

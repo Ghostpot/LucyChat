@@ -12000,13 +12000,48 @@ namespace Rech
     static long VkGroup(string token, string group)
     {
       long id;
-      string bare = group == null ? "" : group.Trim().TrimStart('-');
+      string bare = VkScreen(group);
+      if (bare.StartsWith("club", StringComparison.OrdinalIgnoreCase) || bare.StartsWith("public", StringComparison.OrdinalIgnoreCase) || bare.StartsWith("event", StringComparison.OrdinalIgnoreCase))
+      {
+        string tail = Regex.Replace(bare, "^(club|public|event)", "", RegexOptions.IgnoreCase);
+        if (long.TryParse(tail, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) && id > 0) return id;
+      }
+      bare = bare.TrimStart('-');
       if (long.TryParse(bare, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) && id > 0) return id;
-      JObject info = VkCall(token, "groups.getById", "group_id=" + Uri.EscapeDataString(bare));
+      if (bare.IndexOf("vk1.", StringComparison.OrdinalIgnoreCase) >= 0 || bare.Length > 50)
+      {
+        throw new Exception("В поле группы напиши ghostpotplay. Туда не надо ключ и не надо ссылку.");
+      }
+      JObject info;
+      try
+      {
+        info = VkCall(token, "groups.getById", "group_id=" + Uri.EscapeDataString(bare));
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (note.IndexOf("domain", StringComparison.OrdinalIgnoreCase) >= 0 || note.IndexOf("100", StringComparison.Ordinal) >= 0)
+        {
+          throw new Exception("Группа «" + bare + "» не подошла. Напиши ghostpotplay, без ссылки.");
+        }
+        throw;
+      }
       JToken found = info.SelectToken("response.groups[0].id");
       if (found == null) found = info.SelectToken("response[0].id");
-      if (found == null) return 0;
+      if (found == null) throw new Exception("ВК не нашёл группу " + bare + ". Напиши ghostpotplay.");
       return (long)found;
+    }
+
+    static string VkScreen(string group)
+    {
+      string text = group == null ? "" : group.Trim();
+      if (text.Length == 0) return "ghostpotplay";
+      text = text.Trim().TrimStart('@');
+      Match link = Regex.Match(text, "(?:https?://)?(?:www\\.)?(?:m\\.)?(?:vk\\.com|vk\\.ru)/([^/?#\\s]+)", RegexOptions.IgnoreCase);
+      if (link.Success) text = link.Groups[1].Value;
+      int slash = text.LastIndexOf('/');
+      if (slash >= 0 && slash < text.Length - 1) text = text.Substring(slash + 1);
+      return text.Trim().Trim('/');
     }
 
     static JObject VkCall(string token, string method, string query)

@@ -11934,8 +11934,45 @@ namespace Rech
     {
       long id = VkGroup(token, group);
       if (id == 0) throw new Exception("ВК не нашёл сообщество " + group);
-      JObject slot = VkCall(token, "photos.getWallUploadServer", "group_id=" + id.ToString(CultureInfo.InvariantCulture));
-      string upload = (string)slot.SelectToken("response.upload_url");
+      JObject slot;
+      try
+      {
+        slot = VkCall(token, "photos.getWallUploadServer", "group_id=" + id.ToString(CultureInfo.InvariantCulture));
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (note.IndexOf("27", StringComparison.Ordinal) >= 0 || note.IndexOf("сообщества", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+          PostVkByMessage(token, id, nick, jpg);
+          return;
+        }
+        throw;
+      }
+      FinishVkPhoto(token, id, nick, jpg, slot, "photos.saveWallPhoto", true);
+    }
+
+    static void PostVkByMessage(string token, long id, string nick, byte[] jpg)
+    {
+      string group = id.ToString(CultureInfo.InvariantCulture);
+      JObject slot;
+      try
+      {
+        slot = VkCall(token, "photos.getMessagesUploadServer", "group_id=" + group);
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (note.IndexOf("messages", StringComparison.OrdinalIgnoreCase) < 0) throw;
+        VkCall(token, "groups.edit", "group_id=" + group + "&messages=1");
+        slot = VkCall(token, "photos.getMessagesUploadServer", "group_id=" + group);
+      }
+      FinishVkPhoto(token, id, nick, jpg, slot, "photos.saveMessagesPhoto", false);
+    }
+
+    static void FinishVkPhoto(string token, long id, string nick, byte[] jpg, JObject slot, string saveMethod, bool withGroup)
+    {
+      string upload = slot == null ? "" : (string)slot.SelectToken("response.upload_url");
       if (upload == null || upload.Length == 0) throw new Exception("ВК не дал адрес загрузки.");
       MultipartFormDataContent form = new MultipartFormDataContent();
       ByteArrayContent file = new ByteArrayContent(jpg);
@@ -11949,8 +11986,9 @@ namespace Rech
       string hash = photo["hash"] == null ? "" : photo["hash"].ToString();
       string blob = photo["photo"] == null ? "" : photo["photo"].ToString();
       if (server.Length == 0 || blob.Length == 0) throw new Exception("ВК не принял файл.");
-      string saveQuery = "group_id=" + id.ToString(CultureInfo.InvariantCulture) + "&server=" + Uri.EscapeDataString(server) + "&photo=" + Uri.EscapeDataString(blob) + "&hash=" + Uri.EscapeDataString(hash);
-      JObject saved = VkCall(token, "photos.saveWallPhoto", saveQuery);
+      string saveQuery = "server=" + Uri.EscapeDataString(server) + "&photo=" + Uri.EscapeDataString(blob) + "&hash=" + Uri.EscapeDataString(hash);
+      if (withGroup) saveQuery = "group_id=" + id.ToString(CultureInfo.InvariantCulture) + "&" + saveQuery;
+      JObject saved = VkCall(token, saveMethod, saveQuery);
       JToken first = saved.SelectToken("response[0]");
       if (first == null) throw new Exception("ВК не сохранил фото.");
       string owner = first["owner_id"].ToString();

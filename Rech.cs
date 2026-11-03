@@ -11705,7 +11705,7 @@ namespace Rech
           string why = ex.Message == null ? "" : ex.Message;
           if (drawKey.Length > 0) why = why.Replace(drawKey, "token");
           if (drawVk.Length > 0) why = why.Replace(drawVk, "token");
-          if (why.Length > 140) why = why.Substring(0, 140);
+          why = PaintWhy(why);
           Tell("Люси", nick + ", картинка не вышла. " + why, false);
         }
       });
@@ -11742,7 +11742,42 @@ namespace Rech
       string english = ToEnglish(prompt);
       if (english.Length == 0) english = prompt;
       if (!string.Equals(english, prompt, StringComparison.Ordinal)) Tell("Люси", "Рисую так: " + english, false);
-      return TryCloudflare(account, token, english);
+      try
+      {
+        return TryCloudflare(account, token, english);
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (note.IndexOf("NSFW", StringComparison.OrdinalIgnoreCase) < 0 && note.IndexOf("safety", StringComparison.OrdinalIgnoreCase) < 0) throw;
+        string calm = Calm(english);
+        Tell("Люси", "Cloudflare забраковал запрос. Рисую спокойнее: " + calm, false);
+        return TryCloudflare(account, token, calm);
+      }
+    }
+
+    static string Calm(string prompt)
+    {
+      string line = prompt == null ? "" : prompt;
+      line = Regex.Replace(line, "\\b(girls?|women|woman)\\b", "hero", RegexOptions.IgnoreCase);
+      line = Regex.Replace(line, "\\b(nude|naked|nsfw|sexy|bikini)\\b", "", RegexOptions.IgnoreCase);
+      line = Regex.Replace(line, "\\b(beer|drunk)\\b", "mug", RegexOptions.IgnoreCase);
+      line = Regex.Replace(line, "\\s+", " ").Trim();
+      if (line.Length > 180) line = line.Substring(0, 180).Trim();
+      return line + ", fully clothed fantasy hero, safe illustration";
+    }
+
+    static string PaintWhy(string note)
+    {
+      if (note == null || note.Length == 0) return "не вышло";
+      if (note.IndexOf("NSFW", StringComparison.OrdinalIgnoreCase) >= 0 || note.IndexOf("safety", StringComparison.OrdinalIgnoreCase) >= 0)
+      {
+        return "Cloudflare отказался рисовать этот запрос. Напиши проще, без намёков.";
+      }
+      int cut = note.IndexOf('{');
+      if (cut > 0) note = note.Substring(0, cut).Trim();
+      if (note.Length > 140) note = note.Substring(0, 140);
+      return note;
     }
 
     static byte[] TryCloudflare(string account, string token, string prompt)

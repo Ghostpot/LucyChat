@@ -103,6 +103,7 @@ namespace Rech
     public string Icons;
     public string UserId;
     public bool Reward;
+    public string RewardName;
   }
 
   static class Swear
@@ -1368,7 +1369,14 @@ namespace Rech
           Dictionary<string, object> push = Net.Dict(message, "push");
           Dictionary<string, object> pub = Net.Dict(push, "pub");
           Dictionary<string, object> payload = Net.Dict(pub, "data");
-          if (payload == null || Net.S(Net.Get(payload, "type")) != "message") continue;
+          if (payload == null) continue;
+          string kind = Net.S(Net.Get(payload, "type"));
+          if (kind == "cp_reward_demand" || kind == "reward_demand")
+          {
+            EmitVkReward(gen, source, payload, kind);
+            continue;
+          }
+          if (kind != "message") continue;
           Dictionary<string, object> inner = Net.Dict(payload, "data");
           Dictionary<string, object> authorRecord = Net.Dict(inner, "author");
           string author = authorRecord == null ? "" : Net.S(Net.Get(authorRecord, "displayName"));
@@ -1393,6 +1401,41 @@ namespace Rech
       {
         ws.Dispose();
       }
+    }
+
+    void EmitVkReward(int gen, SourceConfig source, Dictionary<string, object> payload, string kind)
+    {
+      Dictionary<string, object> inner = Net.Dict(payload, "data");
+      if (kind == "reward_demand")
+      {
+        Dictionary<string, object> nested = Net.Dict(payload, "reward_demand");
+        if (nested != null) inner = nested;
+      }
+      if (inner == null) return;
+      Dictionary<string, object> user = Net.Dict(inner, "user");
+      string author = user == null ? "" : Net.S(Net.Get(user, "displayName"));
+      if (author.Length == 0 && user != null) author = Net.S(Net.Get(user, "nick"));
+      if (author.Length == 0 && user != null) author = Net.S(Net.Get(user, "name"));
+      if (author.Length == 0 && user != null) author = Net.S(Net.Get(user, "display_name"));
+      Dictionary<string, object> reward = Net.Dict(inner, "reward");
+      string title = reward == null ? "" : Net.S(Net.Get(reward, "name"));
+      if (author.Length == 0 || title.Length == 0) return;
+      string icons;
+      string typed = VkText(Net.Get(inner, "activationMessage"), out icons);
+      string id = Net.S(Net.Get(inner, "demandId"));
+      if (id.Length == 0) id = author + ":" + title + ":" + typed;
+      ChatMessage chat = new ChatMessage();
+      chat.Id = "vk-reward:" + source.Id + ":" + id;
+      chat.SourceId = source.Id;
+      chat.Platform = "vk";
+      chat.Author = author;
+      chat.Text = typed.Length > 0 ? typed : title;
+      chat.Icons = icons;
+      chat.Reward = true;
+      chat.RewardName = title;
+      chat.Ts = Net.ToMs(Net.Get(inner, "createdAt"));
+      chat.Fresh = true;
+      EmitMessage(gen, chat);
     }
 
     static string VkSlug(string input)
@@ -7269,7 +7312,14 @@ namespace Rech
       seen.Add(message.Id);
       if (seen.Count > 4000) seen.Clear();
       if (message.Reward) Rewards.Note(message.Author, message.Text);
-      if (IsRewardPing(message.Text))
+      bool namedReward = message.RewardName != null && message.RewardName.Trim().Length > 0;
+      if (namedReward)
+      {
+        string typed = message.Text == null ? "" : message.Text.Trim();
+        if (string.Equals(typed, message.RewardName.Trim(), StringComparison.OrdinalIgnoreCase)) typed = "";
+        Rewards.FromPlatform(message.Author, message.RewardName, typed, message.Id, message.Platform);
+      }
+      if (!namedReward && IsRewardPing(message.Text))
       {
         if (Rewards.IsPicture(message.Text))
         {
@@ -7315,8 +7365,8 @@ namespace Rech
         Room.Hear(row.Author, row.Text);
         Rewards.Note(message.Author, message.Text);
       }
-      if (message.Fresh && picturePrompt != null && picturePrompt.Length > 1) Rewards.Paint(message.Author, picturePrompt, Rewards.IsVkPicture(message.Text));
-      else if (message.Fresh && picturePay) Rewards.Paint(message.Author, "", Rewards.IsVkPicture(message.Text));
+      if (!namedReward && message.Fresh && picturePrompt != null && picturePrompt.Length > 1) Rewards.Paint(message.Author, picturePrompt, Rewards.IsVkPicture(message.Text));
+      else if (!namedReward && message.Fresh && picturePay) Rewards.Paint(message.Author, "", Rewards.IsVkPicture(message.Text));
       if (message.Fresh && !quiet) SpeakLater(message);
       if (message.Fresh && !quiet && !mercy) ConsiderLucy(message);
     }
@@ -11193,6 +11243,22 @@ namespace Rech
       }
     }
 
+    public static void FromPlatform(string user, string title, string input, string id, string platform)
+    {
+      RewardPrefs current;
+      lock (gate) current = prefs;
+      if (current == null) current = new RewardPrefs();
+      JObject ev = new JObject();
+      ev["id"] = id == null ? "" : id;
+      ev["user_name"] = user == null ? "" : user;
+      ev["user_input"] = input == null ? "" : input;
+      ev["platform"] = platform == null ? "" : platform;
+      ev["reward"] = new JObject();
+      ev["reward"]["title"] = title == null ? "" : title;
+      ev["reward"]["id"] = "";
+      Accept(current, ev);
+    }
+
     static void Accept(RewardPrefs current, JToken ev)
     {
       string redemption = (string)ev["id"];
@@ -11307,7 +11373,9 @@ namespace Rech
       }
       string pictureTitle = current.PictureTitle == null || current.PictureTitle.Trim().Length == 0 ? "Картинка TG" : current.PictureTitle.Trim();
       string vkTitle = current.PictureVk == null || current.PictureVk.Trim().Length == 0 ? "Картинка VK" : current.PictureVk.Trim();
+      string platform = (string)ev["platform"];
       bool toVk = SameTitle(title, vkTitle) || VkWord(title);
+      if (!toVk && platform == "vk" && !TgWord(title) && (SameTitle(title, pictureTitle) || PictureName(title))) toVk = true;
       if (!toVk && !SameTitle(title, pictureTitle) && !PictureName(title))
       {
         Tell("Люси", "Пришла награда «" + (title == null ? "" : title) + "». Это не картинка.", false);
@@ -11350,6 +11418,13 @@ namespace Rech
       string line = Regex.Replace(text, "\\s+", " ").Trim();
       if (key.Length == 0 || line.Length < 2 || IsPicture(line)) return;
       lock (gate) lastPrompt[key] = line;
+    }
+
+    static bool TgWord(string title)
+    {
+      if (title == null) return false;
+      string low = title.ToLowerInvariant();
+      return low.Contains("tg") || low.Contains("телег") || low.Contains("telegram");
     }
 
     static bool VkWord(string title)

@@ -5941,10 +5941,25 @@ namespace Rech
       picRewardBox.Text = "Картинка";
       Place(right, picRewardBox, 14, ref y, 28);
       picVkBox = new TextBox();
-      Place(right, MakeMute("Токен Яндекс.Диска. В чат его не пиши. Ссылка будет disk.yandex.ru"), 14, ref y, 18);
+      Place(right, MakeMute("Разрешение Диска, не ClientID и не секрет со страницы приложения."), 14, ref y, 18);
       yaTokenBox = new TextBox();
       StyleBox(yaTokenBox);
       Place(right, yaTokenBox, 14, ref y, 28);
+      Button allowDisk = MakeButton("Разрешить Диск", true);
+      allowDisk.Click += delegate
+      {
+        try
+        {
+          Process.Start(new ProcessStartInfo("https://oauth.yandex.ru/authorize?response_type=token&client_id=08f2429f1de74db4a2b14fde9ff9393a") { UseShellExecute = true });
+        }
+        catch
+        {
+        }
+      };
+      Place(right, allowDisk, 14, ref y, 36);
+      Button checkDisk = MakeButton("Проверить Диск", false);
+      checkDisk.Click += delegate { CheckDisk(); };
+      Place(right, checkDisk, 14, ref y, 36);
       picLimitLabel = MakeMute("На ник 10");
       Place(right, picLimitLabel, 14, ref y, 18);
       picLimitBar = new TrackBar();
@@ -7548,6 +7563,35 @@ namespace Rech
       if (author.Length == 0 || IsMuted(author)) return;
       muteBox.Text = muteBox.Text.Trim().Length == 0 ? author : muteBox.Text.Trim() + "\r\n" + author;
       SaveSettings();
+    }
+
+    void CheckDisk()
+    {
+      string raw = yaTokenBox == null ? "" : yaTokenBox.Text;
+      string token = Rewards.DiskToken(raw);
+      if (yaTokenBox != null && !string.Equals(token, raw.Trim(), StringComparison.Ordinal)) yaTokenBox.Text = token;
+      if (!Rewards.DiskReady(token))
+      {
+        MessageBox.Show(this, "В поле ключ приложения со страницы Lucy_img. Нажми «Разрешить Диск». На открывшейся странице скопируй длинный access_token и вставь его сюда.", "Яндекс.Диск");
+        return;
+      }
+      Thread worker = new Thread(delegate()
+      {
+        string note = Rewards.ProbeDisk(token);
+        try
+        {
+          BeginInvoke(new Action(delegate()
+          {
+            MessageBox.Show(this, note, "Яндекс.Диск");
+          }));
+        }
+        catch
+        {
+        }
+      });
+      worker.IsBackground = true;
+      worker.Name = "DiskProbe";
+      worker.Start();
     }
 
     void FindMaxChannel()
@@ -11633,8 +11677,13 @@ namespace Rech
         if (painted.Count > 80) painted.Clear();
       }
       Hide(prompt);
-      string drawYa = current.YaToken == null ? "" : current.YaToken.Trim();
-      if (drawYa.StartsWith("OAuth ", StringComparison.OrdinalIgnoreCase)) drawYa = drawYa.Substring(6).Trim();
+      string drawYa = DiskToken(current.YaToken);
+      if (!DiskReady(drawYa))
+      {
+        Cancel(current, broadcaster, rewardId, redemption);
+        Tell("Люси", "Диск не подключён. Нажми «Разрешить Диск» и вставь access_token, не ClientID и не секрет.", false);
+        return;
+      }
       int cap = current.PictureLimit;
       if (cap < 0) cap = 10;
       if (cap > 30) cap = 30;
@@ -11651,13 +11700,6 @@ namespace Rech
         Pictures.GiveBack(user, "");
         Cancel(current, broadcaster, rewardId, redemption);
         Tell("Люси", "Нет ключа Cloudflare. Вставь Account ID и токен Workers AI.", false);
-        return;
-      }
-      if (drawYa.Length < 20)
-      {
-        Pictures.GiveBack(user, "");
-        Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Нет токена Яндекс.Диска. Вставь его в награду «Картинка».", false);
         return;
       }
       if (!Pictures.TakeDay())
@@ -11912,6 +11954,48 @@ namespace Rech
       }
       string token = (string)obj["token"];
       return token == null ? "" : token;
+    }
+
+    public static string DiskToken(string raw)
+    {
+      if (raw == null) return "";
+      string text = raw.Trim().Trim('"');
+      int at = text.IndexOf("access_token=", StringComparison.OrdinalIgnoreCase);
+      if (at >= 0)
+      {
+        text = text.Substring(at + "access_token=".Length);
+        int cut = text.IndexOf('&');
+        if (cut >= 0) text = text.Substring(0, cut);
+        try { text = Uri.UnescapeDataString(text); } catch { }
+      }
+      if (text.StartsWith("OAuth ", StringComparison.OrdinalIgnoreCase)) text = text.Substring(6).Trim();
+      if (text.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) text = text.Substring(7).Trim();
+      return text.Trim();
+    }
+
+    public static bool DiskReady(string token)
+    {
+      if (token == null) return false;
+      if (token.Length < 40) return false;
+      if (Regex.IsMatch(token, "^[0-9a-fA-F]{32}$")) return false;
+      return true;
+    }
+
+    public static string ProbeDisk(string token)
+    {
+      try
+      {
+        Ya(token, HttpMethod.Get, "https://cloud-api.yandex.net/v1/disk/", null);
+        return "Диск открыт. Можно заказывать картинку.";
+      }
+      catch (Exception ex)
+      {
+        string why = ex.Message == null ? "" : ex.Message;
+        if (token != null && token.Length > 0) why = why.Replace(token, "token");
+        if (why.IndexOf("401", StringComparison.Ordinal) >= 0) return "Диск не пустил. Нажми «Разрешить Диск» и вставь access_token со страницы. ClientID и секрет не подходят.";
+        if (why.Length > 180) why = why.Substring(0, 180);
+        return "Диск: " + why;
+      }
     }
 
     static string UploadYandex(string token, string nick, byte[] jpg)

@@ -581,6 +581,7 @@ namespace Rech
     public string MaxToken;
     public string CfAccount;
     public string CfToken;
+    public string YaToken;
     public int SongSeconds;
     public int? SongVolume;
     public bool? SongYoutube;
@@ -5484,6 +5485,7 @@ namespace Rech
     TextBox maxTokenBox;
     TextBox cfAccountBox;
     TextBox cfTokenBox;
+    TextBox yaTokenBox;
     TextBox songSecondsBox;
     Label songVolumeLabel;
     TrackBar songVolumeBar;
@@ -5940,6 +5942,10 @@ namespace Rech
       StyleBox(picVkBox);
       picVkBox.Text = "Картинка VK";
       Place(right, picVkBox, 14, ref y, 28);
+      Place(right, MakeMute("Токен Яндекс.Диска. В чат его не пиши. Ссылка будет disk.yandex.ru"), 14, ref y, 18);
+      yaTokenBox = new TextBox();
+      StyleBox(yaTokenBox);
+      Place(right, yaTokenBox, 14, ref y, 28);
       vkLinkBox = new TextBox();
       vkGroupBox = new TextBox();
       vkTokenBox = new TextBox();
@@ -6451,6 +6457,7 @@ namespace Rech
       if (maxTokenBox != null) maxTokenBox.TextChanged += save;
       if (cfAccountBox != null) cfAccountBox.TextChanged += save;
       if (cfTokenBox != null) cfTokenBox.TextChanged += save;
+      if (yaTokenBox != null) yaTokenBox.TextChanged += save;
       if (songSecondsBox != null) songSecondsBox.TextChanged += save;
       if (songVolumeBar != null) songVolumeBar.Scroll += delegate
       {
@@ -6684,6 +6691,7 @@ namespace Rech
       }
       if (cfAccountBox != null) cfAccountBox.Text = settings.CfAccount == null ? "" : settings.CfAccount;
       if (cfTokenBox != null) cfTokenBox.Text = settings.CfToken == null ? "" : settings.CfToken;
+      if (yaTokenBox != null) yaTokenBox.Text = settings.YaToken == null ? "" : settings.YaToken;
       if (songSecondsBox != null) songSecondsBox.Text = settings.SongSeconds < 20 ? "75" : settings.SongSeconds.ToString(CultureInfo.InvariantCulture);
       if (songVolumeBar != null)
       {
@@ -8565,6 +8573,7 @@ namespace Rech
       prefs.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       prefs.CfAccount = cfAccountBox == null ? "" : cfAccountBox.Text.Trim();
       prefs.CfToken = cfTokenBox == null ? "" : cfTokenBox.Text.Trim();
+      prefs.YaToken = yaTokenBox == null ? "" : yaTokenBox.Text.Trim();
       int seconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds);
       if (seconds < 20) seconds = 20;
@@ -8776,6 +8785,7 @@ namespace Rech
       settings.MaxToken = maxTokenBox == null ? "" : maxTokenBox.Text.Trim();
       settings.CfAccount = cfAccountBox == null ? "" : cfAccountBox.Text.Trim();
       settings.CfToken = cfTokenBox == null ? "" : cfTokenBox.Text.Trim();
+      settings.YaToken = yaTokenBox == null ? "" : yaTokenBox.Text.Trim();
       int songSeconds = 75;
       if (songSecondsBox != null) int.TryParse(songSecondsBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out songSeconds);
       if (songSeconds < 20) songSeconds = 20;
@@ -10336,6 +10346,7 @@ namespace Rech
     public string MaxToken;
     public string CfAccount;
     public string CfToken;
+    public string YaToken;
     public int Seconds;
     public int Volume;
     public bool Youtube;
@@ -11659,6 +11670,8 @@ namespace Rech
       string fallbackToken = token;
       string fallbackChat = chatId;
       string fallbackLink = current.MaxLink == null || current.MaxLink.Trim().Length == 0 ? "https://t.me/ghostpot_chat" : current.MaxLink.Trim();
+      string drawYa = current.YaToken == null ? "" : current.YaToken.Trim();
+      if (drawYa.StartsWith("OAuth ", StringComparison.OrdinalIgnoreCase)) drawYa = drawYa.Substring(6).Trim();
       bool drawVkSide = vk;
       if (!drawVkSide) Tell("Люси", nick + ", картинку выложу сюда: " + link, true);
       else Tell("Люси", nick + ", рисую. Ссылку напишу, когда картинка будет готова.", false);
@@ -11670,10 +11683,12 @@ namespace Rech
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
           if (drawVkSide)
           {
-            string url = UploadLink(jpg);
+            string url = "";
+            if (drawYa.Length > 20) url = UploadYandex(drawYa, nick, jpg);
+            else url = UploadLink(jpg);
             if (url.Length == 0)
             {
-              if (fallbackToken.IndexOf(':') < 0) throw new Exception("Ссылку не собрала, а Telegram не подключён.");
+              if (fallbackToken.IndexOf(':') < 0) throw new Exception(drawYa.Length > 20 ? "Диск не дал ссылку." : "Ссылку не собрала, а Telegram не подключён.");
               PostTelegram(fallbackToken, fallbackChat, nick, jpg);
               url = fallbackLink;
             }
@@ -11692,6 +11707,7 @@ namespace Rech
           Cancel(current, broadcaster, rewardId, redemption);
           string why = ex.Message == null ? "" : ex.Message;
           if (drawKey.Length > 0) why = why.Replace(drawKey, "token");
+          if (drawYa.Length > 0) why = why.Replace(drawYa, "token");
           why = PaintWhy(why);
           Tell("Люси", nick + ", картинка не вышла. " + why, false);
         }
@@ -11915,6 +11931,58 @@ namespace Rech
       }
       string token = (string)obj["token"];
       return token == null ? "" : token;
+    }
+
+    static string UploadYandex(string token, string nick, byte[] jpg)
+    {
+      string safe = Regex.Replace(nick == null ? "" : nick, "[^A-Za-z0-9_-]", "");
+      if (safe.Length == 0) safe = "pic";
+      if (safe.Length > 24) safe = safe.Substring(0, 24);
+      string folder = "disk:/LucyChat";
+      string path = folder + "/" + safe + "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + ".jpg";
+      try
+      {
+        HttpRequestMessage mk = new HttpRequestMessage(HttpMethod.Put, "https://cloud-api.yandex.net/v1/disk/resources?path=" + Uri.EscapeDataString(folder));
+        mk.Headers.TryAddWithoutValidation("Authorization", "OAuth " + token);
+        try { Send(mk); }
+        catch (Exception ex)
+        {
+          string note = ex.Message == null ? "" : ex.Message;
+          if (note.IndexOf("409", StringComparison.Ordinal) < 0) throw;
+        }
+        string meta = Ya(token, HttpMethod.Get, "https://cloud-api.yandex.net/v1/disk/resources/upload?overwrite=true&path=" + Uri.EscapeDataString(path), null);
+        string href = (string)JObject.Parse(meta)["href"];
+        if (href == null || href.Length == 0) throw new Exception("Диск не дал адрес загрузки.");
+        HttpRequestMessage put = new HttpRequestMessage(HttpMethod.Put, href);
+        put.Content = new ByteArrayContent(jpg);
+        put.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        Send(put);
+        Ya(token, HttpMethod.Put, "https://cloud-api.yandex.net/v1/disk/resources/publish?path=" + Uri.EscapeDataString(path), null);
+        string info = Ya(token, HttpMethod.Get, "https://cloud-api.yandex.net/v1/disk/resources?path=" + Uri.EscapeDataString(path), null);
+        string url = (string)JObject.Parse(info)["public_url"];
+        if (url == null || url.Length == 0)
+        {
+          Thread.Sleep(500);
+          info = Ya(token, HttpMethod.Get, "https://cloud-api.yandex.net/v1/disk/resources?path=" + Uri.EscapeDataString(path), null);
+          url = (string)JObject.Parse(info)["public_url"];
+        }
+        if (url == null || url.Length == 0) throw new Exception("Диск не дал публичную ссылку.");
+        return url;
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (token.Length > 0) note = note.Replace(token, "token");
+        throw new Exception("Яндекс.Диск: " + note);
+      }
+    }
+
+    static string Ya(string token, HttpMethod method, string url, HttpContent body)
+    {
+      HttpRequestMessage req = new HttpRequestMessage(method, url);
+      req.Headers.TryAddWithoutValidation("Authorization", "OAuth " + token);
+      if (body != null) req.Content = body;
+      return Send(req);
     }
 
     static string UploadLink(byte[] jpg)

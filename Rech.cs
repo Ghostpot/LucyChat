@@ -6003,8 +6003,8 @@ namespace Rech
       Button testSong = MakeButton("Проверить песню", true);
       testSong.Click += delegate { Rewards.Preview(); };
       Place(right, testSong, 14, ref y, 36);
-      Button skipSong = MakeButton("Пропустить песню", false);
-      skipSong.Click += delegate { Rewards.Skip(); };
+      Button skipSong = MakeButton("Остановить песни", false);
+      skipSong.Click += delegate { Rewards.StopAll(); };
       Place(right, skipSong, 14, ref y, 36);
       Button hideSong = MakeButton("Скрыть плеер", false);
       hideSong.Click += delegate
@@ -6014,7 +6014,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("Песня звучит только в источнике браузера «ЛюсиЧат — клип». В OBS у этого источника включи управление звуком. Когда песня кончается, плашка гаснет."), 14, ref y, 54);
+      Place(right, MakeMute("Песня играет только по ссылке плеера, отдельным источником браузера в OBS. Окно чата её не поёт. Люси в чате по-прежнему говорит."), 14, ref y, 54);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -8703,8 +8703,7 @@ namespace Rech
       if (rewardState != null) rewardState.Text = Rewards.Status;
       if (botState != null) botState.Text = Rewards.BotStatus;
       if (songNow != null) songNow.Text = Rewards.NowText();
-      ClipWindow.Sync(Rewards.CurrentEmbed());
-      ObsEye.Want(Rewards.CurrentEmbed().Length > 0);
+      ClipWindow.Sync("");
       if (speaker.LastError != null && speaker.LastError.Length > 0) errorLabel.Text = speaker.LastError;
       else errorLabel.Text = "";
     }
@@ -11176,6 +11175,17 @@ namespace Rech
       }
     }
 
+    public static void StopAll()
+    {
+      lock (gate)
+      {
+        now = null;
+        queue.Clear();
+        until = DateTime.UtcNow;
+        concealed = false;
+      }
+    }
+
     public static void Skip()
     {
       lock (gate)
@@ -11249,6 +11259,18 @@ namespace Rech
         sb.Append(",\"volume\":").Append(volume.ToString(CultureInfo.InvariantCulture));
         sb.Append('}');
         return sb.ToString();
+      }
+    }
+
+    public static void Finish(string id)
+    {
+      lock (gate)
+      {
+        if (now == null) return;
+        if (id != null && id.Length > 0 && now.Id != id) return;
+        now = null;
+        until = DateTime.UtcNow;
+        NextLocked();
       }
     }
 
@@ -12753,7 +12775,16 @@ namespace Rech
         }
         else if (path == "/player/done")
         {
-          Rewards.Skip();
+          string doneId = "";
+          int q = request.IndexOf("?id=");
+          if (q >= 0)
+          {
+            int start = q + 4;
+            int end = request.IndexOf(' ', start);
+            if (end < 0) end = request.Length;
+            doneId = Uri.UnescapeDataString(request.Substring(start, end - start).Trim());
+          }
+          Rewards.Finish(doneId);
           body = Encoding.UTF8.GetBytes("ok");
           type = "text/plain; charset=utf-8";
         }
@@ -12864,9 +12895,9 @@ namespace Rech
         + "var last='';var vol=100;var closing=false;"
         + "function applyVol(n){vol=n;var a=document.getElementById('a');if(a)a.volume=Math.max(0,Math.min(1,n/100));}"
         + "function clearBox(){var a=document.getElementById('a');a.onended=null;try{a.pause();}catch(e){}a.removeAttribute('src');try{a.load();}catch(e){}var cap=document.getElementById('cap');cap.style.display='none';cap.textContent='';}"
-        + "function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}"
-        + "function show(j){closing=false;var a=document.getElementById('a');a.onended=function(){ended();};a.src=j.embed||'';applyVol(vol);var play=a.play();if(play&&play.catch)play.catch(function(){});var cap=document.getElementById('cap');cap.textContent=(j.by?j.by+' · ':'')+(j.title||j.host||'Люси');cap.style.display='block';}"
-        + "async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();"
+        + "function ended(){if(closing)return;closing=true;fetch('/player/done?id='+encodeURIComponent(last),{cache:'no-store'}).catch(function(){});}"
+        + "function show(j){closing=false;var a=document.getElementById('a');var src=j.embed||'';var token=j.id||'';a.onended=null;try{a.pause();}catch(e){}a.src=src;applyVol(vol);var started=Date.now();a.onended=function(){if(Date.now()-started<1500)return;ended();};var play=a.play();if(play&&play.catch)play.catch(function(){});var cap=document.getElementById('cap');cap.textContent=(j.by?j.by+' · ':'')+(j.title||j.host||'Люси');cap.style.display='block';last=token;}"
+        + "async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){show(j);}}catch(e){}}setInterval(tick,500);tick();"
         + "</script></body></html>";
     }
 

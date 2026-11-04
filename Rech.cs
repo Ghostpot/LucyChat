@@ -5915,7 +5915,7 @@ namespace Rech
       };
       Place(right, loreButton, 14, ref y, 36);
       Place(right, MakeCaption("НАГРАДЫ"), 14, ref y, 28);
-      Place(right, MakeWrap("На Twitch создай две награды за баллы и включи «зритель вводит текст». Название должно совпасть с полями ниже. Песня не скачивается: в OBS играет официальный плеер. Чужую музыку поставь на дорожку, которая не пишется в запись эфира, иначе Twitch её заглушит."), 14, ref y, 92);
+      Place(right, MakeWrap("Награда «Заказать песню» ставит песню Люси с ghostpot.ru. Можно написать название. Если пусто или такой нет, она споёт из текущего мира. Чужие ролики не включаются."), 14, ref y, 72);
       Place(right, MakeMute("Client ID с dev.twitch.tv"), 14, ref y, 18);
       twitchClient = new TextBox();
       StyleBox(twitchClient);
@@ -5984,11 +5984,7 @@ namespace Rech
       cfTokenBox = new TextBox();
       StyleBox(cfTokenBox);
       Place(right, cfTokenBox, 14, ref y, 28);
-      Place(right, MakeMute("Сколько секунд играет песня, от 20 до 180"), 14, ref y, 18);
       songSecondsBox = new TextBox();
-      StyleBox(songSecondsBox);
-      songSecondsBox.Text = "75";
-      Place(right, songSecondsBox, 14, ref y, 28);
       songVolumeLabel = MakeMute("Музыка 100");
       Place(right, songVolumeLabel, 14, ref y, 18);
       songVolumeBar = new TrackBar();
@@ -6000,21 +5996,12 @@ namespace Rech
       QuietBar(songVolumeBar);
       Place(right, songVolumeBar, 14, ref y, 36);
       songYtBox = MakeCheck("YouTube");
-      songYtBox.Checked = true;
-      Place(right, songYtBox, 14, ref y, 28);
       songRuBox = MakeCheck("Rutube");
-      songRuBox.Checked = true;
-      Place(right, songRuBox, 14, ref y, 28);
       songVkBox = MakeCheck("VK Видео");
-      songVkBox.Checked = true;
-      Place(right, songVkBox, 14, ref y, 28);
       songNow = MakeWrap("Сейчас тишина.");
       Place(right, songNow, 14, ref y, 40);
-      Button testSong = MakeButton("Проверить клип", true);
-      testSong.Click += delegate
-      {
-        if (!Rewards.Replay() && songNow != null) songNow.Text = "Сначала закажи одну ссылку. Эфир для проверки не нужен.";
-      };
+      Button testSong = MakeButton("Проверить песню", true);
+      testSong.Click += delegate { Rewards.Preview(); };
       Place(right, testSong, 14, ref y, 36);
       Button skipSong = MakeButton("Пропустить песню", false);
       skipSong.Click += delegate { Rewards.Skip(); };
@@ -6027,7 +6014,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("Когда песни нет, плашка в OBS сама гаснет и игра видна. Источник «Захват окна» оставь на «ЛюсиЧат — клип». Если плашка осталась, в OBS: Инструменты → Настройки вебсокета → включить сервер."), 14, ref y, 72);
+      Place(right, MakeMute("Песня звучит только в источнике браузера «ЛюсиЧат — клип». В OBS у этого источника включи управление звуком. Когда песня кончается, плашка гаснет."), 14, ref y, 54);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -10426,6 +10413,8 @@ namespace Rech
     public string Embed;
     public string By;
     public string Host;
+    public string Title;
+    public int Seconds;
   }
 
   static class MaxPage
@@ -10582,6 +10571,8 @@ namespace Rech
     static DateTime lastAt;
     static string lastEmbed = "";
     static string lastHost = "";
+    static int lastSeconds;
+    static int songSpin;
     static bool concealed;
 
     public static void Apply(RewardPrefs next)
@@ -11176,12 +11167,11 @@ namespace Rech
         item.Id = Guid.NewGuid().ToString("N");
         item.Embed = lastEmbed;
         item.By = "проверка";
-        item.Host = lastHost == null || lastHost.Length == 0 ? "YouTube" : lastHost;
+        item.Host = lastHost == null || lastHost.Length == 0 ? "Люси" : lastHost;
+        item.Title = item.Host;
+        item.Seconds = lastSeconds < 30 ? 180 : lastSeconds;
         now = item;
-        int seconds = prefs.Seconds;
-        if (seconds < 20) seconds = 75;
-        if (seconds > 180) seconds = 180;
-        until = DateTime.UtcNow.AddSeconds(seconds);
+        until = DateTime.UtcNow.AddSeconds(item.Seconds + 12);
         return true;
       }
     }
@@ -11244,6 +11234,7 @@ namespace Rech
         sb.Append(",\"embed\":").Append(JsonConvert.ToString(quiet ? "" : now.Embed));
         sb.Append(",\"by\":").Append(JsonConvert.ToString(quiet ? "" : now.By));
         sb.Append(",\"host\":").Append(JsonConvert.ToString(quiet ? "" : now.Host));
+        sb.Append(",\"title\":").Append(JsonConvert.ToString(quiet ? "" : (now.Title == null || now.Title.Length == 0 ? now.Host : now.Title)));
         sb.Append(",\"hide\":").Append(concealed ? "true" : "false");
         int left = 0;
         if (now != null)
@@ -11270,10 +11261,9 @@ namespace Rech
       }
       now = queue[0];
       queue.RemoveAt(0);
-      int seconds = prefs.Seconds;
-      if (seconds < 20) seconds = 75;
-      if (seconds > 180) seconds = 180;
-      until = DateTime.UtcNow.AddSeconds(seconds);
+      int seconds = now.Seconds;
+      if (seconds < 30) seconds = 180;
+      until = DateTime.UtcNow.AddSeconds(seconds + 12);
     }
 
     static void Loop()
@@ -11439,13 +11429,12 @@ namespace Rech
       string lucyTitle = current.LucyTitle == null || current.LucyTitle.Trim().Length == 0 ? "Поговорить с Люси" : current.LucyTitle.Trim();
       if (SameTitle(title, songTitle))
       {
-        string embed;
-        string host;
-        string why;
-        if (!SongLink(input, current, out embed, out host, out why))
+        string note;
+        OwnSong song = PickSong(input, out note);
+        if (song == null)
         {
           Cancel(current, broadcaster, rewardId, redemption);
-          Tell("Люси", user + ", " + why, false);
+          Tell("Люси", user + ", песен пока нет.", false);
           return;
         }
         if (Cool(user, "song"))
@@ -11462,11 +11451,14 @@ namespace Rech
           {
             SongItem item = new SongItem();
             item.Id = redemption == null ? Guid.NewGuid().ToString("N") : redemption;
-            item.Embed = embed;
+            item.Embed = song.Url;
             item.By = user;
-            item.Host = host;
-            lastEmbed = embed;
-            lastHost = host;
+            item.Host = song.Title;
+            item.Title = song.Title;
+            item.Seconds = song.Seconds;
+            lastEmbed = song.Url;
+            lastHost = song.Title;
+            lastSeconds = song.Seconds;
             queue.Add(item);
             concealed = false;
             if (now == null) NextLocked();
@@ -11478,7 +11470,7 @@ namespace Rech
           Tell("Люси", user + ", очередь полная. Подожди, пока доиграет.", false);
           return;
         }
-        Tell("Люси", user + ", песня в очереди.", false);
+        Tell("Люси", user + ", " + note, false);
         return;
       }
       if (SameTitle(title, lucyTitle))
@@ -12302,6 +12294,186 @@ namespace Rech
       return string.Equals(title.Trim(), want.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
+    public static void Preview()
+    {
+      string note;
+      OwnSong song = PickSong("", out note);
+      if (song == null) return;
+      lock (gate)
+      {
+        concealed = false;
+        SongItem item = new SongItem();
+        item.Id = Guid.NewGuid().ToString("N");
+        item.Embed = song.Url;
+        item.By = "проверка";
+        item.Host = song.Title;
+        item.Title = song.Title;
+        item.Seconds = song.Seconds;
+        lastEmbed = song.Url;
+        lastHost = song.Title;
+        lastSeconds = song.Seconds;
+        now = item;
+        until = DateTime.UtcNow.AddSeconds(song.Seconds + 12);
+      }
+    }
+
+    class OwnSong
+    {
+      public string Title;
+      public string World;
+      public int Seconds;
+      public string Url;
+    }
+
+    static OwnSong[] OwnSongs()
+    {
+      string[] rows = new string[]
+      {
+        "Ни то|Люси|151|/chronicle/music/nito.mp3",
+        "Сон|Люси|270|/chronicle/music/son.mp3",
+        "Сделай это сам|Люси|144|/chronicle/music/sdelay.mp3",
+        "Едва двадцать лет|Готика|254|/chronicle/music/edva.mp3",
+        "Заручиться водой|Готика|213|/chronicle/music/vodoy.mp3",
+        "Отмычка и руда|Готика|234|/chronicle/music/otmychka.mp3",
+        "Колония купола|Готика|333|/chronicle/music/kolonia.mp3",
+        "Алые ручейки|Кальрадия|277|/chronicle/music/alye.mp3",
+        "Ветер шальной|Кальрадия|302|/chronicle/music/veter.mp3",
+        "Град по щиту|Кальрадия|185|/chronicle/music/grad.mp3",
+        "Кальрадия. Костёр|Кальрадия|122|/chronicle/music/koster.mp3",
+        "Кальрадия молчит|Кальрадия|307|/chronicle/music/molchit.mp3",
+        "Кальрадия шепчет|Кальрадия|334|/chronicle/music/shepchet.mp3",
+        "Красный песок|Кальрадия|180|/chronicle/music/pesok.mp3",
+        "Перерыв|Кальрадия|220|/chronicle/music/pereryv.mp3",
+        "Седло в натяжку|Кальрадия|155|/chronicle/music/sedlo.mp3",
+        "Смоем всё|Кальрадия|253|/chronicle/music/liven.mp3",
+        "Нас горсть, но мы буря|Кальрадия|259|/chronicle/music/burya.mp3",
+        "Осада|Кальрадия|255|/chronicle/music/osada.mp3",
+        "Моё королевство|Pathfinder|220|/chronicle/music/korolevstvo.mp3",
+        "Просто поешь говядины|Pathfinder|185|/chronicle/music/govyadina.mp3",
+        "Клеймёный тролль|Pathfinder|242|/chronicle/music/troll.mp3",
+        "Баба Яга|Tomb Raider|299|/chronicle/music/yaga.mp3",
+        "Один путь наверх|Tomb Raider|312|/chronicle/music/naverh.mp3",
+        "Яматай|Tomb Raider|234|/chronicle/music/yamatai.mp3",
+        "Где-то там|Кенши|190|/chronicle/music/gde-to-tam.mp3",
+        "Долина кислотных дождей|Кенши|246|/chronicle/music/dolina.mp3",
+        "Кенши|Кенши|195|/chronicle/music/kenshi.mp3",
+        "Sector Unknown|Сектор|236|/chronicle/music/sector.mp3",
+        "Сьо, наливай до дна|Сектор|195|/chronicle/music/nalivay.mp3",
+        "No One Lives Forever|NOLF|229|/chronicle/music/nolf.mp3",
+        "Кто не бросает у щита|Азерот|222|/chronicle/music/schit.mp3",
+        "В чертогах гор|Азерот|291|/chronicle/music/chertogi.mp3",
+        "Каменный пол|Азерот|185|/chronicle/music/hakkar.mp3",
+        "Героиня сомнительных приключений|Азерот|181|/chronicle/music/somnenie.mp3",
+        "Люси-путешественник|Азерот|162|/chronicle/music/puteshestvennik.mp3",
+        "Пирожки под Shadowbolt|Азерот|181|/chronicle/music/pirozhki.mp3",
+        "Свиток квестов|Азерот|245|/chronicle/music/svitok.mp3",
+        "Хил ищет танка|Азерот|101|/chronicle/music/tank.mp3",
+        "Бе-е-е! Ква!|Азерот|190|/chronicle/music/kva.mp3",
+        "Швейная кураж|Азерот|148|/chronicle/music/shveya.mp3",
+        "Жизнь одна, но я стальная|Азерот|225|/chronicle/music/stalnaya.mp3",
+        "Плюс пять к броне|Азерот|118|/chronicle/music/trusy.mp3",
+        "Кроликов лови|Зомбоид|122|/chronicle/music/kroliki.mp3",
+        "Лес, а не базар|Зомбоид|172|/chronicle/music/les.mp3",
+        "Не робей|Зомбоид|90|/chronicle/music/robey.mp3",
+        "Пустой дом|Зомбоид|133|/chronicle/music/dom.mp3",
+        "Хрупкий огонь|Зомбоид|242|/chronicle/music/ogon.mp3"
+      };
+      OwnSong[] list = new OwnSong[rows.Length];
+      int i;
+      for (i = 0; i < rows.Length; i++)
+      {
+        string[] part = rows[i].Split('|');
+        OwnSong song = new OwnSong();
+        song.Title = part[0];
+        song.World = part[1];
+        int seconds;
+        int.TryParse(part[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds);
+        song.Seconds = seconds < 30 ? 180 : seconds;
+        song.Url = "https://ghostpot.ru" + part[3];
+        list[i] = song;
+      }
+      return list;
+    }
+
+    static string FoldSong(string text)
+    {
+      if (text == null) return "";
+      string low = text.ToLowerInvariant().Replace('ё', 'е');
+      StringBuilder sb = new StringBuilder();
+      int i;
+      for (i = 0; i < low.Length; i++)
+      {
+        char c = low[i];
+        if (char.IsLetterOrDigit(c)) sb.Append(c);
+        else if (char.IsWhiteSpace(c)) sb.Append(' ');
+      }
+      return Regex.Replace(sb.ToString(), " +", " ").Trim();
+    }
+
+    static bool SongWorld(string songWorld, string live)
+    {
+      string a = FoldSong(songWorld);
+      string b = FoldSong(live);
+      if (a.Length == 0 || b.Length == 0) return false;
+      if (a == b) return true;
+      if (b.Contains("зомб") && a.Contains("зомб")) return true;
+      if (b.Contains("азер") && a.Contains("азер")) return true;
+      if (b.Contains("кенш") && a.Contains("кенш")) return true;
+      if (b.Contains("кальр") && a.Contains("кальр")) return true;
+      if (b.Contains("готик") && a.Contains("готик")) return true;
+      return false;
+    }
+
+    static OwnSong PickSong(string input, out string note)
+    {
+      OwnSong[] all = OwnSongs();
+      note = "";
+      if (all.Length == 0) return null;
+      string raw = input == null ? "" : input.Trim();
+      bool foreign = raw.IndexOf("http", StringComparison.OrdinalIgnoreCase) >= 0 || raw.IndexOf("youtu", StringComparison.OrdinalIgnoreCase) >= 0 || raw.IndexOf("rutube", StringComparison.OrdinalIgnoreCase) >= 0 || raw.IndexOf("vk.com", StringComparison.OrdinalIgnoreCase) >= 0 || raw.IndexOf("vk.ru", StringComparison.OrdinalIgnoreCase) >= 0;
+      string query = foreign ? "" : FoldSong(raw);
+      OwnSong best = null;
+      int bestScore = 0;
+      if (query.Length >= 3)
+      {
+        int i;
+        for (i = 0; i < all.Length; i++)
+        {
+          string title = FoldSong(all[i].Title);
+          int score = 0;
+          if (title == query) score = 100;
+          else if (title.Contains(query)) score = 50 + query.Length;
+          else if (query.Contains(title) && title.Length >= 4) score = 40;
+          if (score > bestScore)
+          {
+            bestScore = score;
+            best = all[i];
+          }
+        }
+      }
+      if (best != null && bestScore >= 40)
+      {
+        note = "пою «" + best.Title + "».";
+        return best;
+      }
+      List<OwnSong> pool = new List<OwnSong>();
+      string live = LucyStage.World;
+      int n;
+      for (n = 0; n < all.Length; n++) if (SongWorld(all[n].World, live)) pool.Add(all[n]);
+      if (pool.Count == 0)
+      {
+        for (n = 0; n < all.Length; n++) pool.Add(all[n]);
+      }
+      int at = songSpin;
+      songSpin = songSpin + 1;
+      if (at < 0) at = 0;
+      OwnSong picked = pool[at % pool.Count];
+      if (foreign) note = "чужой ролик не ставлю. Пою «" + picked.Title + "».";
+      else if (query.Length >= 3) note = "такой нет. Пою «" + picked.Title + "».";
+      else note = "пою «" + picked.Title + "».";
+      return picked;
+    }
+
     public static bool SongLink(string text, RewardPrefs current, out string embed, out string host, out string why)
     {
       embed = "";
@@ -12731,16 +12903,15 @@ namespace Rech
 
     static string PlayerPage()
     {
-      return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"strict-origin-when-cross-origin\"><style>html,body,#box{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}#box{position:fixed;left:0;top:0}iframe{width:100%;height:100%;border:0;display:block;background:#000}</style></head><body><div id=\"box\"></div><script src=\"https://www.youtube.com/iframe_api\"></script><script>"
-        + "var last='';var player=null;var closing=false;var vol=100;var tried=false;"
-        + "function onYouTubeIframeAPIReady(){}"
-        + "function applyVol(n){vol=n;if(player&&player.setVolume){try{player.setVolume(n);if(n>0)player.unMute();}catch(e){}}}"
-        + "function clearBox(){if(player&&player.destroy){try{player.destroy();}catch(e){}}player=null;var box=document.getElementById('box');if(box)box.innerHTML='';}"
+      return "<!doctype html><html><head><meta charset=\"utf-8\"><style>"
+        + "html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}"
+        + "#cap{display:none;position:fixed;left:28px;bottom:28px;max-width:80%;color:#F4EFE6;font:600 32px/1.25 Segoe UI,sans-serif;text-shadow:0 2px 10px #000}"
+        + "</style></head><body><audio id=\"a\" preload=\"auto\"></audio><div id=\"cap\"></div><script>"
+        + "var last='';var vol=100;var closing=false;"
+        + "function applyVol(n){vol=n;var a=document.getElementById('a');if(a)a.volume=Math.max(0,Math.min(1,n/100));}"
+        + "function clearBox(){var a=document.getElementById('a');a.onended=null;try{a.pause();}catch(e){}a.removeAttribute('src');try{a.load();}catch(e){}var cap=document.getElementById('cap');cap.style.display='none';cap.textContent='';}"
         + "function ended(){if(closing)return;closing=true;fetch('/player/done',{cache:'no-store'}).catch(function(){});}"
-        + "function frame(src){clearBox();var f=document.createElement('iframe');f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');f.setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');f.setAttribute('allowfullscreen','');f.src=src;document.getElementById('box').appendChild(f);}"
-        + "function show(j){closing=false;tried=false;if(typeof j.volume==='number')vol=j.volume;var embed=j.embed||'';var m=embed.match(/embed\\/([^?&#]+)/);var id=m?m[1]:'';"
-        + "if(j.host==='YouTube'&&id&&window.YT&&YT.Player){clearBox();document.getElementById('box').innerHTML='<div id=\"yt\"></div>';var born=Date.now();player=new YT.Player('yt',{width:'100%',height:'100%',videoId:id,playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1,controls:1,origin:location.origin,enablejsapi:1,widget_referrer:location.href},events:{onReady:function(e){try{e.target.unMute();e.target.setVolume(vol);e.target.playVideo();}catch(err){}},onError:function(){if(tried)return;tried=true;frame('https://www.youtube-nocookie.com/embed/'+id+'?autoplay=1&rel=0&playsinline=1');},onStateChange:function(e){if(e.data!==0)return;if(Date.now()-born<8000)return;var d=0,t=0;try{d=player.getDuration();t=player.getCurrentTime();}catch(err){}if(d>1&&t+1.5<d)return;ended();}}});return;}"
-        + "var src=embed;if(j.host==='YouTube'&&id)src='https://www.youtube-nocookie.com/embed/'+id+'?autoplay=1&rel=0&playsinline=1';frame(src);}"
+        + "function show(j){closing=false;var a=document.getElementById('a');a.onended=function(){ended();};a.src=j.embed||'';applyVol(vol);var play=a.play();if(play&&play.catch)play.catch(function(){});var cap=document.getElementById('cap');cap.textContent=(j.by?j.by+' · ':'')+(j.title||j.host||'Люси');cap.style.display='block';}"
         + "async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){last=j.id;show(j);}}catch(e){}}setInterval(tick,500);tick();"
         + "</script></body></html>";
     }

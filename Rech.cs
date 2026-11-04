@@ -3250,6 +3250,7 @@ namespace Rech
     public string Talk;
     public string Joke;
     public string Mad;
+    public string Sing;
   }
 
   public class LorePiece
@@ -3275,12 +3276,19 @@ namespace Rech
     public static string Talk = "";
     public static string Joke = "";
     public static string Mad = "";
+    public static string Sing = "";
     public static string File = "";
     public static string Miss = "";
     public static int Token;
     public static long Until;
     static byte[] bytes;
     static string loaded;
+    static bool singing;
+
+    public static bool Singing
+    {
+      get { return singing && File != null && File.Length > 0 && Until >= OverlayHub.NowMs(); }
+    }
 
     public static string[] Names()
     {
@@ -3289,6 +3297,8 @@ namespace Rech
 
     public static void Show(string answer)
     {
+      if (Singing) return;
+      singing = false;
       Miss = "";
       if (!On || answer == null || answer.Length == 0)
       {
@@ -3322,6 +3332,38 @@ namespace Rech
       if (seconds < span) seconds = span;
       if (seconds > 45) seconds = 45;
       Until = OverlayHub.NowMs() + seconds * 1000L;
+    }
+
+    public static void PlaySing(int seconds)
+    {
+      Miss = "";
+      if (!On)
+      {
+        Miss = "Галочка лица выключена.";
+        return;
+      }
+      string path = FirstClip(Sing, "sing.mp4");
+      if (path.Length == 0)
+      {
+        Miss = "Нет ролика пения. Положи sing.mp4 в папку faces или укажи кнопкой «Ролик: поёт».";
+        return;
+      }
+      Speaker.CutLive();
+      File = path;
+      singing = true;
+      Token = Token + 1;
+      if (seconds < 8) seconds = 8;
+      if (seconds > 600) seconds = 600;
+      Until = OverlayHub.NowMs() + (seconds + 1) * 1000L;
+    }
+
+    public static void Hush()
+    {
+      if (!singing) return;
+      singing = false;
+      File = "";
+      Until = 0;
+      Token = Token + 1;
     }
 
     static string FirstClip(params string[] paths)
@@ -4799,6 +4841,13 @@ namespace Rech
       public bool Priority;
     }
 
+    public Speaker()
+    {
+      Live = this;
+    }
+
+    public static Speaker Live;
+    SoundPlayer livePlay;
     readonly object speakGate = new object();
     readonly Queue<Cue> urgent = new Queue<Cue>();
     readonly Queue<Cue> later = new Queue<Cue>();
@@ -4908,6 +4957,24 @@ namespace Rech
       }
     }
 
+    public static void CutLive()
+    {
+      Speaker who = Live;
+      if (who != null) who.Cut();
+    }
+
+    public void Cut()
+    {
+      ClearQueue();
+      try
+      {
+        if (livePlay != null) livePlay.Stop();
+      }
+      catch
+      {
+      }
+    }
+
     public void Stop()
     {
       speakRun = false;
@@ -4981,7 +5048,15 @@ namespace Rech
         AdjustWav(path, current.Volume / 100f, current.RatePercent / 100f);
         using (SoundPlayer player = new SoundPlayer(path))
         {
-          player.PlaySync();
+          livePlay = player;
+          try
+          {
+            player.PlaySync();
+          }
+          finally
+          {
+            if (livePlay == player) livePlay = null;
+          }
         }
       }
       finally
@@ -5867,7 +5942,10 @@ namespace Rech
       Button pickMad = MakeButton("Ролик: злится", false);
       pickMad.Click += delegate { PickFace("mad"); };
       Place(right, pickMad, 14, ref y, 32);
-      Place(right, MakeWrap("Ролики не в комплекте. Положи свои в папку faces рядом с RECH.exe: azeroth и zomboid, внутри talk.mp4, joke.mp4, mad.mp4. Или укажи файл кнопкой."), 14, ref y, 72);
+      Button pickSing = MakeButton("Ролик: поёт", false);
+      pickSing.Click += delegate { PickFace("sing"); };
+      Place(right, pickSing, 14, ref y, 32);
+      Place(right, MakeWrap("Ролики без звука. Папка faces рядом с RECH.exe: talk.mp4, joke.mp4, mad.mp4 и sing.mp4. Пока идёт песня, она молчит и не сменяет лицо на разговор."), 14, ref y, 72);
       Place(right, MakeMute("Лицо в OBS — отдельный источник «Браузер». Вставь ссылку заново и обнови источник. Пока она молчит, там пусто."), 14, ref y, 48);
       lookBox = new TextBox();
       StyleBox(lookBox);
@@ -6601,11 +6679,13 @@ namespace Rech
         azeroth.Talk = "azeroth/talk.mp4";
         azeroth.Joke = "azeroth/joke.mp4";
         azeroth.Mad = "azeroth/mad.mp4";
+        azeroth.Sing = "azeroth/sing.mp4";
         FaceSet zomboid = new FaceSet();
         zomboid.Name = "Зомбоид";
         zomboid.Talk = "zomboid/talk.mp4";
         zomboid.Joke = "zomboid/joke.mp4";
         zomboid.Mad = "zomboid/mad.mp4";
+        zomboid.Sing = "zomboid/sing.mp4";
         faces.Add(azeroth);
         faces.Add(zomboid);
       }
@@ -6614,8 +6694,12 @@ namespace Rech
       {
         FaceSet set = faces[n];
         if (set == null || set.Name == null) continue;
-        if (!string.Equals(set.Name, "Зомбоид", StringComparison.OrdinalIgnoreCase)) continue;
-        if (set.Talk != null && set.Talk.StartsWith("azeroth/", StringComparison.OrdinalIgnoreCase))
+        if (set.Sing == null || set.Sing.Length == 0)
+        {
+          if (set.Talk != null && set.Talk.EndsWith("talk.mp4", StringComparison.OrdinalIgnoreCase)) set.Sing = set.Talk.Substring(0, set.Talk.Length - 8) + "sing.mp4";
+          else set.Sing = "sing.mp4";
+        }
+        if (string.Equals(set.Name, "Зомбоид", StringComparison.OrdinalIgnoreCase) && set.Talk != null && set.Talk.StartsWith("azeroth/", StringComparison.OrdinalIgnoreCase))
         {
           set.Talk = "zomboid/talk.mp4";
           set.Joke = "zomboid/joke.mp4";
@@ -7797,6 +7881,7 @@ namespace Rech
       LucyStage.Talk = set == null || set.Talk == null ? "" : set.Talk;
       LucyStage.Joke = set == null || set.Joke == null ? "" : set.Joke;
       LucyStage.Mad = set == null || set.Mad == null ? "" : set.Mad;
+      LucyStage.Sing = set == null || set.Sing == null ? "" : set.Sing;
     }
 
     FaceSet CurrentFace()
@@ -7817,6 +7902,7 @@ namespace Rech
       set.Talk = folder + "/talk.mp4";
       set.Joke = folder + "/joke.mp4";
       set.Mad = folder + "/mad.mp4";
+      set.Sing = folder + "/sing.mp4";
       faces.Add(set);
       worldBox.Items.Add(name);
       worldBox.SelectedIndex = worldBox.Items.Count - 1;
@@ -7845,6 +7931,7 @@ namespace Rech
           EnsureFaceFile(root, set.Talk);
           EnsureFaceFile(root, set.Joke);
           EnsureFaceFile(root, set.Mad);
+          EnsureFaceFile(root, set.Sing);
         }
       }
       catch
@@ -7870,6 +7957,7 @@ namespace Rech
       if (dlg.ShowDialog(this) != DialogResult.OK) return;
       if (mood == "joke") set.Joke = dlg.FileName;
       else if (mood == "mad") set.Mad = dlg.FileName;
+      else if (mood == "sing") set.Sing = dlg.FileName;
       else set.Talk = dlg.FileName;
       ApplyLucyStage();
       SaveSettings();
@@ -7878,6 +7966,7 @@ namespace Rech
     void ConsiderLucy(ChatMessage message)
     {
       if (lucyBox == null || !lucyBox.Checked || message == null) return;
+      if (LucyStage.Singing) return;
       if (message.Platform == "lucy") return;
       if (Rewards.IsOwn(message.Author)) return;
       if (!LucyLocal.Ready || lucyBusy) return;
@@ -7925,15 +8014,15 @@ namespace Rech
             }
             if (lucyState != null) lucyState.Text = posted.Length > 0 ? posted : "Люси написала в чат Twitch.";
             ApplyLucyStage();
-            LucyStage.Show(say);
-            if (lucyState != null && LucyStage.Miss != null && LucyStage.Miss.Length > 0) lucyState.Text = lucyState.Text + " " + LucyStage.Miss;
+            if (!LucyStage.Singing) LucyStage.Show(say);
+            if (lucyState != null && LucyStage.Miss != null && LucyStage.Miss.Length > 0 && !LucyStage.Singing) lucyState.Text = lucyState.Text + " " + LucyStage.Miss;
             ChatMessage reply = new ChatMessage();
             reply.Id = "lucy:" + Guid.NewGuid().ToString("N");
             reply.Platform = "lucy";
             reply.Author = "Люси";
             reply.Text = say;
             reply.Ts = Net.Now();
-            reply.Fresh = true;
+            reply.Fresh = !LucyStage.Singing;
             AddMessage(reply);
           }));
         }
@@ -8654,7 +8743,7 @@ namespace Rech
       message.Ts = Net.Now();
       message.Fresh = false;
       AddMessage(message);
-      if (speak)
+      if (speak && !LucyStage.Singing)
       {
         speaker.Say(message.Text, true, "xenia");
         string line = message.Text;
@@ -11149,6 +11238,7 @@ namespace Rech
         if (on) now = null;
         else if (now == null) NextLocked();
       }
+      if (on) LucyStage.Hush();
     }
 
     public static bool Concealed
@@ -11171,6 +11261,7 @@ namespace Rech
         item.Seconds = lastSeconds < 30 ? 180 : lastSeconds;
         now = item;
         until = DateTime.UtcNow.AddSeconds(item.Seconds + 12);
+        LucyStage.PlaySing(item.Seconds);
         return true;
       }
     }
@@ -11184,6 +11275,7 @@ namespace Rech
         until = DateTime.UtcNow;
         concealed = false;
       }
+      LucyStage.Hush();
     }
 
     public static void Skip()
@@ -11279,6 +11371,7 @@ namespace Rech
       if (queue.Count == 0)
       {
         now = null;
+        LucyStage.Hush();
         return;
       }
       now = queue[0];
@@ -11286,6 +11379,7 @@ namespace Rech
       int seconds = now.Seconds;
       if (seconds < 30) seconds = 180;
       until = DateTime.UtcNow.AddSeconds(seconds + 12);
+      LucyStage.PlaySing(now.Seconds);
     }
 
     static void Loop()
@@ -11497,6 +11591,12 @@ namespace Rech
       }
       if (SameTitle(title, lucyTitle))
       {
+        if (LucyStage.Singing)
+        {
+          Cancel(current, broadcaster, rewardId, redemption);
+          Tell("Люси", user + ", я сейчас пою. Спроси, когда песня кончится.", false);
+          return;
+        }
         if (input.Length == 0)
         {
           Cancel(current, broadcaster, rewardId, redemption);
@@ -12337,6 +12437,7 @@ namespace Rech
         now = item;
         until = DateTime.UtcNow.AddSeconds(song.Seconds + 12);
       }
+      LucyStage.PlaySing(song.Seconds);
     }
 
     class OwnSong

@@ -12474,52 +12474,6 @@ namespace Rech
       return picked;
     }
 
-    public static bool SongLink(string text, RewardPrefs current, out string embed, out string host, out string why)
-    {
-      embed = "";
-      host = "";
-      why = "нужна одна ссылка на песню с YouTube, Rutube или VK.";
-      if (text == null) return false;
-      Match yt = Regex.Match(text, "(?:youtube\\.com/(?:watch\\?v=|shorts/|embed/|live/)|youtu\\.be/)([A-Za-z0-9_-]{6,16})", RegexOptions.IgnoreCase);
-      if (yt.Success)
-      {
-        if (current != null && !current.Youtube)
-        {
-          why = "YouTube в настройках выключен.";
-          return false;
-        }
-        embed = "https://www.youtube.com/embed/" + yt.Groups[1].Value + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
-        host = "YouTube";
-        return true;
-      }
-      Match ru = Regex.Match(text, "rutube\\.ru/(?:video|play/embed|shorts)/([a-f0-9]{16,40})", RegexOptions.IgnoreCase);
-      if (ru.Success)
-      {
-        if (current != null && !current.Rutube)
-        {
-          why = "Rutube в настройках выключен.";
-          return false;
-        }
-        embed = "https://rutube.ru/play/embed/" + ru.Groups[1].Value + "?autoplay=1";
-        host = "Rutube";
-        return true;
-      }
-      Match vk = Regex.Match(text, "(?:vk\\.com|vk\\.ru|vkvideo\\.ru)/(?:video|clip)(-?\\d+)_(\\d+)", RegexOptions.IgnoreCase);
-      if (!vk.Success) vk = Regex.Match(text, "[?&]z=video(-?\\d+)_(\\d+)", RegexOptions.IgnoreCase);
-      if (vk.Success)
-      {
-        if (current != null && !current.Vk)
-        {
-          why = "VK Видео в настройках выключен.";
-          return false;
-        }
-        embed = "https://vk.com/video_ext.php?oid=" + vk.Groups[1].Value + "&id=" + vk.Groups[2].Value + "&hd=2&autoplay=1";
-        host = "VK Видео";
-        return true;
-      }
-      return false;
-    }
-
     static void Cancel(RewardPrefs current, string broadcaster, string rewardId, string redemption)
     {
       if (current == null || broadcaster == null || rewardId == null || redemption == null) return;

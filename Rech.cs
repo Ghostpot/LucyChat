@@ -3292,7 +3292,7 @@ namespace Rech
 
     public static string[] Names()
     {
-      return new string[] { "Азерот", "Зомбоид", World == null ? "" : World };
+      return new string[] { "Азерот", "Зомбоид", "Рейнджеры", World == null ? "" : World };
     }
 
     public static void Show(string answer)
@@ -3758,6 +3758,8 @@ namespace Rech
       bool hereZomb = prefer != null && (prefer.IndexOf("зомб", StringComparison.OrdinalIgnoreCase) >= 0 || prefer.IndexOf("zomb", StringComparison.OrdinalIgnoreCase) >= 0);
       if (!hereAzeroth && low.Contains("азерот")) return "Азерот";
       if (!hereZomb && (low.Contains("зомб") || low.Contains("zomboid"))) return "Зомбоид";
+      bool hereRanger = prefer != null && (prefer.IndexOf("рейндж", StringComparison.OrdinalIgnoreCase) >= 0 || prefer.IndexOf("ranger", StringComparison.OrdinalIgnoreCase) >= 0);
+      if (!hereRanger && (low.Contains("рейндж") || low.Contains("space ranger") || low.Contains("war apart"))) return "Рейнджеры";
       return "";
     }
 
@@ -6686,8 +6688,15 @@ namespace Rech
         zomboid.Joke = "zomboid/joke.mp4";
         zomboid.Mad = "zomboid/mad.mp4";
         zomboid.Sing = "zomboid/sing.mp4";
+        FaceSet rangers = new FaceSet();
+        rangers.Name = "Рейнджеры";
+        rangers.Talk = "rangers/talk.mp4";
+        rangers.Joke = "rangers/joke.mp4";
+        rangers.Mad = "rangers/mad.mp4";
+        rangers.Sing = "rangers/sing.mp4";
         faces.Add(azeroth);
         faces.Add(zomboid);
+        faces.Add(rangers);
       }
       int n;
       for (n = 0; n < faces.Count; n++)
@@ -6705,6 +6714,22 @@ namespace Rech
           set.Joke = "zomboid/joke.mp4";
           set.Mad = "zomboid/mad.mp4";
         }
+      }
+      bool haveRangers = false;
+      for (n = 0; n < faces.Count; n++)
+      {
+        FaceSet set = faces[n];
+        if (set != null && set.Name != null && set.Name.IndexOf("рейндж", StringComparison.OrdinalIgnoreCase) >= 0) haveRangers = true;
+      }
+      if (!haveRangers)
+      {
+        FaceSet rangers = new FaceSet();
+        rangers.Name = "Рейнджеры";
+        rangers.Talk = "rangers/talk.mp4";
+        rangers.Joke = "rangers/joke.mp4";
+        rangers.Mad = "rangers/mad.mp4";
+        rangers.Sing = "rangers/sing.mp4";
+        faces.Add(rangers);
       }
       EnsureFaceFolders();
       if (faceBox != null) faceBox.Checked = settings.LucyFace ?? true;
@@ -7922,6 +7947,7 @@ namespace Rech
       {
         Directory.CreateDirectory(Path.Combine(root, "azeroth"));
         Directory.CreateDirectory(Path.Combine(root, "zomboid"));
+        Directory.CreateDirectory(Path.Combine(root, "rangers"));
         if (faces == null) return;
         int i;
         for (i = 0; i < faces.Count; i++)
@@ -12544,6 +12570,7 @@ namespace Rech
       if (b.Contains("кенш") && a.Contains("кенш")) return true;
       if (b.Contains("кальр") && a.Contains("кальр")) return true;
       if (b.Contains("готик") && a.Contains("готик")) return true;
+      if (b.Contains("рейндж") && a.Contains("рейндж")) return true;
       return false;
     }
 

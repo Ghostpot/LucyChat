@@ -585,6 +585,7 @@ namespace Rech
     public int? PictureLimit;
     public int SongSeconds;
     public int? SongVolume;
+    public string SongHear;
     public bool? SongYoutube;
     public bool? SongRutube;
     public bool? SongVk;
@@ -5588,6 +5589,7 @@ namespace Rech
     TextBox songSecondsBox;
     Label songVolumeLabel;
     TrackBar songVolumeBar;
+    ComboBox songHearBox;
     CheckBox songYtBox;
     CheckBox songRuBox;
     CheckBox songVkBox;
@@ -6094,6 +6096,14 @@ namespace Rech
       songVolumeBar.BackColor = Surface;
       QuietBar(songVolumeBar);
       Place(right, songVolumeBar, 14, ref y, 36);
+      Place(right, MakeMute("Кто слышит песню"), 14, ref y, 18);
+      songHearBox = new ComboBox();
+      songHearBox.DropDownStyle = ComboBoxStyle.DropDownList;
+      songHearBox.Items.AddRange(new object[] { "Всем: я и зрители", "Только я", "Только зрители" });
+      songHearBox.SelectedIndex = 0;
+      StyleCombo(songHearBox);
+      songHearBox.SelectedIndexChanged += delegate { if (!loading) SaveSettings(); };
+      Place(right, songHearBox, 14, ref y, 28);
       songYtBox = MakeCheck("YouTube");
       songRuBox = MakeCheck("Rutube");
       songVkBox = MakeCheck("VK Видео");
@@ -6113,7 +6123,7 @@ namespace Rech
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
       Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("Песня играет только по ссылке плеера, отдельным источником браузера в OBS. Окно чата её не поёт. Люси в чате по-прежнему говорит."), 14, ref y, 54);
+      Place(right, MakeMute("По умолчанию песню слышишь ты и зрители. «Только я» не играет в источнике плеера. «Только зрители» молчит у тебя, звук в OBS у ссылки плеера."), 14, ref y, 54);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
@@ -6451,7 +6461,7 @@ namespace Rech
       urlBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/" : "ссылка не открылась";
       if (playerBox != null) playerBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/player" : "";
       if (lookBox != null) lookBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/look?v=16" : "";
-      ClipWindow.Home = playerBox == null ? "" : playerBox.Text;
+      ClipWindow.Home = playerBox != null && playerBox.Text.Length > 0 ? playerBox.Text + "?local=1" : "";
       ApplyListen();
       UpdatePlaceholder();
 
@@ -6841,6 +6851,11 @@ namespace Rech
       {
         songVolumeBar.Value = settings.SongVolume.HasValue ? Clamp(settings.SongVolume.Value, 0, 100) : 100;
         if (songVolumeLabel != null) songVolumeLabel.Text = "Музыка " + songVolumeBar.Value.ToString(CultureInfo.InvariantCulture);
+      }
+      if (songHearBox != null)
+      {
+        string hear = settings.SongHear == null ? "all" : settings.SongHear;
+        songHearBox.SelectedIndex = hear == "local" ? 1 : hear == "stream" ? 2 : 0;
       }
       if (songYtBox != null) songYtBox.Checked = settings.SongYoutube ?? true;
       if (songRuBox != null) songRuBox.Checked = settings.SongRutube ?? true;
@@ -8726,6 +8741,13 @@ namespace Rech
       }
     }
 
+    string SongHear()
+    {
+      if (songHearBox == null || songHearBox.SelectedIndex <= 0) return "all";
+      if (songHearBox.SelectedIndex == 1) return "local";
+      return "stream";
+    }
+
     void UpdateStick()
     {
       int visible = Math.Max(1, chat.ClientSize.Height / Math.Max(1, chat.ItemHeight));
@@ -8774,6 +8796,7 @@ namespace Rech
       if (seconds > 180) seconds = 180;
       prefs.Seconds = seconds;
       prefs.Volume = songVolumeBar == null ? 100 : songVolumeBar.Value;
+      prefs.Hear = SongHear();
       prefs.Youtube = songYtBox == null || songYtBox.Checked;
       prefs.Rutube = songRuBox == null || songRuBox.Checked;
       prefs.Vk = songVkBox == null || songVkBox.Checked;
@@ -8851,7 +8874,7 @@ namespace Rech
       if (rewardState != null) rewardState.Text = Rewards.Status;
       if (botState != null) botState.Text = Rewards.BotStatus;
       if (songNow != null) songNow.Text = Rewards.NowText();
-      ClipWindow.Sync("");
+      ClipWindow.Sync(SongHear() == "stream" ? "" : Rewards.CurrentEmbed());
       if (speaker.LastError != null && speaker.LastError.Length > 0) errorLabel.Text = speaker.LastError;
       else errorLabel.Text = "";
     }
@@ -8986,6 +9009,7 @@ namespace Rech
       if (songSeconds > 180) songSeconds = 180;
       settings.SongSeconds = songSeconds;
       settings.SongVolume = songVolumeBar == null ? 100 : songVolumeBar.Value;
+      settings.SongHear = SongHear();
       settings.SongYoutube = songYtBox == null || songYtBox.Checked;
       settings.SongRutube = songRuBox == null || songRuBox.Checked;
       settings.SongVk = songVkBox == null || songVkBox.Checked;
@@ -10544,6 +10568,7 @@ namespace Rech
     public int PictureLimit;
     public int Seconds;
     public int Volume;
+    public string Hear;
     public bool Youtube;
     public bool Rutube;
     public bool Vk;
@@ -11408,6 +11433,9 @@ namespace Rech
         if (volume < 0) volume = 0;
         if (volume > 100) volume = 100;
         sb.Append(",\"volume\":").Append(volume.ToString(CultureInfo.InvariantCulture));
+        string hear = prefs.Hear;
+        if (hear != "local" && hear != "stream") hear = "all";
+        sb.Append(",\"hear\":").Append(JsonConvert.ToString(hear));
         sb.Append('}');
         return sb.ToString();
       }
@@ -13053,12 +13081,13 @@ namespace Rech
         + "html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}"
         + "#cap{display:none;position:fixed;left:28px;bottom:28px;max-width:80%;color:#F4EFE6;font:600 32px/1.25 Segoe UI,sans-serif;text-shadow:0 2px 10px #000}"
         + "</style></head><body><audio id=\"a\" preload=\"auto\"></audio><div id=\"cap\"></div><script>"
-        + "var last='';var vol=100;var closing=false;"
+        + "var last='';var vol=100;var closing=false;var mine=location.search.indexOf('local=1')>=0;"
+        + "function allowed(j){var h=j.hear||'all';if(h==='local')return mine;if(h==='stream')return !mine;return true;}"
         + "function applyVol(n){vol=n;var a=document.getElementById('a');if(a)a.volume=Math.max(0,Math.min(1,n/100));}"
         + "function clearBox(){var a=document.getElementById('a');a.onended=null;try{a.pause();}catch(e){}a.removeAttribute('src');try{a.load();}catch(e){}var cap=document.getElementById('cap');cap.style.display='none';cap.textContent='';}"
         + "function ended(){if(closing)return;closing=true;fetch('/player/done?id='+encodeURIComponent(last),{cache:'no-store'}).catch(function(){});}"
         + "function show(j){closing=false;var a=document.getElementById('a');var src=j.embed||'';var token=j.id||'';a.onended=null;try{a.pause();}catch(e){}a.src=src;applyVol(vol);var started=Date.now();a.onended=function(){if(Date.now()-started<1500)return;ended();};var play=a.play();if(play&&play.catch)play.catch(function(){});var cap=document.getElementById('cap');cap.textContent=(j.by?j.by+' · ':'')+(j.title||j.host||'Люси');cap.style.display='block';last=token;}"
-        + "async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed){if(last){clearBox();last='';}return;}if(j.id!==last){show(j);}}catch(e){}}setInterval(tick,500);tick();"
+        + "async function tick(){try{var r=await fetch('/player/now',{cache:'no-store'});var j=await r.json();if(typeof j.volume==='number'&&j.volume!==vol)applyVol(j.volume);if(!j.embed||!allowed(j)){if(last){clearBox();last='';}return;}if(j.id!==last){show(j);}}catch(e){}}setInterval(tick,500);tick();"
         + "</script></body></html>";
     }
 
@@ -15840,7 +15869,8 @@ namespace Rech
           if (view.CoreWebView2 != null)
           {
             string off = Home == null ? "" : Home;
-            if (off.EndsWith("/player")) off = off + "/off";
+            int player = off.IndexOf("/player");
+            if (player >= 0) off = off.Substring(0, player) + "/player/off";
             if (off.Length == 0) off = "about:blank";
             view.CoreWebView2.Navigate(off);
           }

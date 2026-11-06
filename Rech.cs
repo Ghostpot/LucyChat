@@ -3277,6 +3277,7 @@ namespace Rech
     public static string Joke = "";
     public static string Mad = "";
     public static string Sing = "";
+    public static string Also = "";
     public static string File = "";
     public static string Miss = "";
     public static int Token;
@@ -3297,7 +3298,7 @@ namespace Rech
 
     public static void Show(string answer)
     {
-      if (Singing) return;
+      if (Singing && Rewards.CurrentEmbed().Length > 0) return;
       singing = false;
       Miss = "";
       if (!On || answer == null || answer.Length == 0)
@@ -3310,7 +3311,7 @@ namespace Rech
       string path = Talk;
       if (low.Contains("дура") || low.Contains("затк") || low.Contains("беси") || low.Contains("злю") || low.Contains("хватит") || low.Contains("нагл")) path = Mad;
       else if (low.Contains("аха") || low.Contains("хах") || low.Contains("хех") || low.Contains("смеш") || low.Contains("шут")) path = Joke;
-      path = FirstClip(path, Talk, Joke, Mad, "azeroth/talk.mp4", "zomboid/talk.mp4");
+      path = FirstClip(path, Talk, Joke, Mad, Also, "azeroth/talk.mp4", "zomboid/talk.mp4", "rangers/talk.mp4");
       if (path.Length == 0)
       {
         File = "";
@@ -3403,12 +3404,30 @@ namespace Rech
     public static string Resolve(string path)
     {
       if (path == null || path.Length == 0) return "";
-      if (System.IO.File.Exists(path)) return path;
+      if (System.IO.File.Exists(path))
+      {
+        try
+        {
+          if (new FileInfo(path).Length > 1000) return path;
+        }
+        catch
+        {
+        }
+      }
       string exe = Environment.ProcessPath;
       string dir = exe == null ? "" : Path.GetDirectoryName(exe);
       if (dir == null || dir.Length == 0) return "";
       string beside = Path.Combine(dir, "faces", path.Replace('/', Path.DirectorySeparatorChar));
-      if (System.IO.File.Exists(beside)) return beside;
+      if (System.IO.File.Exists(beside))
+      {
+        try
+        {
+          if (new FileInfo(beside).Length > 1000) return beside;
+        }
+        catch
+        {
+        }
+      }
       return "";
     }
   }
@@ -5962,7 +5981,7 @@ namespace Rech
         LucyStage.On = true;
         LucyStage.Show("привет");
         LucyStage.On = was;
-        if (lucyState != null) lucyState.Text = LucyStage.File != null && LucyStage.File.Length > 0 ? "Лицо на ссылке выше. Эфир не нужен." : (LucyStage.Miss.Length > 0 ? LucyStage.Miss : "Ролика нет.");
+        if (lucyState != null) lucyState.Text = LucyStage.File != null && LucyStage.File.Length > 0 ? "Лицо: " + Path.GetFileName(LucyStage.File) + ". Обнови источник лица в OBS." : (LucyStage.Miss.Length > 0 ? LucyStage.Miss : "Ролика нет.");
       };
       Place(right, tryFace, 14, ref y, 32);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
@@ -6431,7 +6450,7 @@ namespace Rech
       hub.Start();
       urlBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/" : "ссылка не открылась";
       if (playerBox != null) playerBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/player" : "";
-      if (lookBox != null) lookBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/look?v=15" : "";
+      if (lookBox != null) lookBox.Text = hub.Port > 0 ? "http://127.0.0.1:" + hub.Port.ToString(CultureInfo.InvariantCulture) + "/look?v=16" : "";
       ClipWindow.Home = playerBox == null ? "" : playerBox.Text;
       ApplyListen();
       UpdatePlaceholder();
@@ -7907,12 +7926,26 @@ namespace Rech
       LucyStage.Joke = set == null || set.Joke == null ? "" : set.Joke;
       LucyStage.Mad = set == null || set.Mad == null ? "" : set.Mad;
       LucyStage.Sing = set == null || set.Sing == null ? "" : set.Sing;
+      LucyStage.Also = OtherFace(set);
     }
 
     FaceSet CurrentFace()
     {
       if (faces == null || worldBox == null || worldBox.SelectedIndex < 0 || worldBox.SelectedIndex >= faces.Count) return null;
       return faces[worldBox.SelectedIndex];
+    }
+
+    string OtherFace(FaceSet current)
+    {
+      if (faces == null) return "";
+      int i;
+      for (i = 0; i < faces.Count; i++)
+      {
+        FaceSet set = faces[i];
+        if (set == null || set == current) continue;
+        if (LucyStage.Resolve(set.Talk).Length > 0) return set.Talk;
+      }
+      return "";
     }
 
     void AddWorld()
@@ -13133,18 +13166,18 @@ namespace Rech
       return "<!doctype html><html><head><meta charset='utf-8'><title>Люси</title><style>"
         + "html,body{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden;}"
         + "#face{position:fixed;left:0;top:0;width:100%;height:100%;display:none;}"
-        + "#vid{position:fixed;left:0;top:0;width:100%;height:100%;object-fit:contain;opacity:0;}"
-        + "</style></head><body><canvas id='face' width='360' height='480'></canvas><video id='vid' muted autoplay playsinline loop></video><script>"
+        + "#vid{position:fixed;left:0;top:0;width:100%;height:100%;object-fit:contain;opacity:0;background:transparent;}"
+        + "</style></head><body><video id='vid' muted autoplay playsinline loop></video><canvas id='face' width='480' height='640'></canvas><script>"
         + "var faceToken=0;var faceRun=0;"
         + "function showFace(token){var canvas=document.getElementById('face');var vid=document.getElementById('vid');"
         + "if(!token){if(!faceToken)return;faceToken=0;faceRun++;canvas.style.display='none';vid.style.opacity='0';try{vid.pause();}catch(e){}return;}"
         + "if(token===faceToken)return;faceToken=token;faceRun++;var run=faceRun;"
-        + "vid.muted=true;vid.defaultMuted=true;vid.volume=0;vid.loop=true;vid.src='/face?t='+token;"
-        + "var ctx=canvas.getContext('2d',{alpha:true,willReadFrequently:true});var painted=false;"
-        + "function frame(){if(run!==faceRun)return;try{if(vid.readyState>=2&&vid.videoWidth){ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var p;"
-        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>70&&g>r+28&&g>b+28){var spill=g-Math.max(r,b);d[p+3]=spill>48?0:Math.max(0,255-spill*4);}}"
-        + "ctx.putImageData(img,0,0);canvas.style.display='block';painted=true;}}catch(e){vid.style.opacity='1';}"
-        + "if(!painted&&vid.readyState>=2)vid.style.opacity='1';requestAnimationFrame(frame);}"
+        + "vid.muted=true;vid.defaultMuted=true;vid.volume=0;vid.loop=true;vid.style.opacity='0';canvas.style.display='none';vid.src='/face?t='+token;"
+        + "var ctx=canvas.getContext('2d',{alpha:true,willReadFrequently:true});"
+        + "function frame(){if(run!==faceRun)return;try{if(vid.readyState>=2&&vid.videoWidth){ctx.drawImage(vid,0,0,canvas.width,canvas.height);var img=ctx.getImageData(0,0,canvas.width,canvas.height);var d=img.data;var keep=0;var p;"
+        + "for(p=0;p<d.length;p+=4){var r=d[p],g=d[p+1],b=d[p+2];if(g>70&&g>r+28&&g>b+28){var spill=g-Math.max(r,b);d[p+3]=spill>48?0:Math.max(0,255-spill*4);}if(d[p+3]>40)keep++;}"
+        + "if(keep>d.length/32){ctx.putImageData(img,0,0);canvas.style.display='block';vid.style.opacity='0';}else{canvas.style.display='none';vid.style.opacity='1';}}}catch(e){vid.style.opacity='1';}"
+        + "requestAnimationFrame(frame);}"
         + "function kick(){var p=vid.play();if(p&&p.catch)p.catch(function(){});}"
         + "vid.onloadeddata=kick;vid.oncanplay=kick;vid.onerror=function(){canvas.style.display='none';};kick();requestAnimationFrame(frame);}"
         + "function tick(){var x=new XMLHttpRequest();x.open('GET','/feed?t='+Date.now(),true);"

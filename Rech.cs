@@ -5535,6 +5535,10 @@ namespace Rech
     Panel topBar;
     Panel left;
     Panel right;
+    Panel[] sheets;
+    int[] sheetY;
+    Panel[] menuKeys;
+    int menuOn;
     Panel center;
     ListBox chat;
     Label emptyLabel;
@@ -5730,8 +5734,8 @@ namespace Rech
       ForeColor = Ink;
       Font = new Font("Segoe UI", 10f);
       boldFont = new Font(Font, FontStyle.Bold);
-      MinimumSize = new Size(880, 560);
-      Size = new Size(1120, 740);
+      MinimumSize = new Size(1080, 640);
+      Size = new Size(1200, 780);
       StartPosition = FormStartPosition.CenterScreen;
       try
       {
@@ -5887,50 +5891,51 @@ namespace Rech
 
       right = new Panel();
       right.Dock = DockStyle.Right;
-      right.Width = 320;
-      right.AutoScroll = true;
+      right.Width = 384;
       right.BackColor = Surface;
-      int y = 12;
+      BuildMenu();
       Label voiceTitle = MakeCaption("ГОЛОС");
-      Place(right, voiceTitle, 14, ref y, 28);
+      Put(0, voiceTitle, 28);
       Label voiceHint = MakeWrap("Один диктор на всю сессию. Очередь не перебивает сама себя и не меняет голос посреди фразы.");
-      Place(right, voiceHint, 14, ref y, 58);
+      Put(0, voiceHint, 58);
       ttsBox = MakeCheck("Озвучивать новые сообщения");
-      Place(right, ttsBox, 14, ref y, 28);
+      Put(0, ttsBox, 28);
       engineBox = new ComboBox();
       engineBox.Items.AddRange(new object[] { "Голос Windows", "Silero в РЕЧЬ" });
       engineBox.SelectedIndex = 1;
       voiceBox = new ComboBox();
-      Place(right, MakeMute("Диктор"), 14, ref y, 18);
+      Put(0, MakeMute("Диктор"), 18);
       sileroBox = new ComboBox();
       sileroBox.DropDownStyle = ComboBoxStyle.DropDownList;
       sileroBox.Items.AddRange(new object[] { "Ксения", "Ксюша", "Бая", "Айдар", "Евгений" });
       StyleCombo(sileroBox);
-      Place(right, sileroBox, 14, ref y, 28);
+      Put(0, sileroBox, 28);
       sileroState = MakeWrap("Кнопка качает голос в папку silero рядом с программой. Нужен интернет и около 2 ГБ.");
-      Place(right, sileroState, 14, ref y, 58);
+      Put(0, sileroState, 58);
       sileroInstall = MakeButton("Скачать голос", true);
       sileroInstall.Click += delegate { StartSileroInstall(); };
-      Place(right, sileroInstall, 14, ref y, 36);
+      Put(0, sileroInstall, 36);
+      Put(1, MakeCaption("ЛЮСИ"), 28);
+      Put(1, MakeWrap("Отвечает, если её позвали. Здесь лицо, мир и вход её аккаунта. Награды и голос чата — в других разделах."), 58);
       lucyBox = MakeCheck("Люси отвечает");
-      Place(right, lucyBox, 14, ref y, 28);
+      Put(1, lucyBox, 28);
       modBox = MakeCheck("Люси модерирует: мут за запретные слова, бан за спам");
       modBox.Checked = true;
-      Place(right, modBox, 14, ref y, 28);
-      Place(right, MakeWrap("Пишет только в чат Twitch. На остальных площадках затыкает у себя. На GoodGame банит, если вписать id и токен помощника."), 14, ref y, 58);
-      Place(right, MakeMute("GoodGame: id помощника"), 14, ref y, 18);
+      Put(1, modBox, 28);
+      Put(1, MakeWrap("Пишет только в чат Twitch. На остальных площадках затыкает у себя. На GoodGame банит, если вписать id и токен помощника."), 58);
+      Put(1, MakeMute("GoodGame: id помощника"), 18);
       ggModId = new TextBox();
       StyleBox(ggModId);
-      Place(right, ggModId, 14, ref y, 28);
-      Place(right, MakeMute("GoodGame: токен помощника"), 14, ref y, 18);
+      Put(1, ggModId, 28);
+      Put(1, MakeMute("GoodGame: токен помощника"), 18);
       ggModToken = new TextBox();
       StyleBox(ggModToken);
-      Place(right, ggModToken, 14, ref y, 28);
+      Put(1, ggModToken, 28);
       faceBox = MakeCheck("Показывать лицо, когда отвечает");
       faceBox.Checked = true;
-      Place(right, faceBox, 14, ref y, 28);
+      Put(1, faceBox, 28);
       faceSpanLabel = MakeMute("Лицо 6 с на короткую фразу");
-      Place(right, faceSpanLabel, 14, ref y, 18);
+      Put(1, faceSpanLabel, 18);
       faceSpanBar = new TrackBar();
       faceSpanBar.Minimum = 2;
       faceSpanBar.Maximum = 20;
@@ -5938,9 +5943,9 @@ namespace Rech
       faceSpanBar.Value = 6;
       faceSpanBar.BackColor = Surface;
       QuietBar(faceSpanBar);
-      Place(right, faceSpanBar, 14, ref y, 36);
+      Put(1, faceSpanBar, 36);
       lucyWaitLabel = MakeMute("Пауза ответа 2 с");
-      Place(right, lucyWaitLabel, 14, ref y, 18);
+      Put(1, lucyWaitLabel, 18);
       lucyWaitBar = new TrackBar();
       lucyWaitBar.Minimum = 0;
       lucyWaitBar.Maximum = 20;
@@ -5948,37 +5953,37 @@ namespace Rech
       lucyWaitBar.Value = 2;
       lucyWaitBar.BackColor = Surface;
       QuietBar(lucyWaitBar);
-      Place(right, lucyWaitBar, 14, ref y, 36);
-      Place(right, MakeMute("Мир, который сейчас в эфире"), 14, ref y, 18);
+      Put(1, lucyWaitBar, 36);
+      Put(1, MakeMute("Мир, который сейчас в эфире"), 18);
       worldBox = new ComboBox();
       worldBox.DropDownStyle = ComboBoxStyle.DropDownList;
       StyleCombo(worldBox);
-      Place(right, worldBox, 14, ref y, 28);
+      Put(1, worldBox, 28);
       worldAdd = new TextBox();
       StyleBox(worldAdd);
-      Place(right, worldAdd, 14, ref y, 28);
+      Put(1, worldAdd, 28);
       Button addWorld = MakeButton("Добавить мир", false);
       addWorld.Click += delegate { AddWorld(); };
-      Place(right, addWorld, 14, ref y, 36);
+      Put(1, addWorld, 36);
       Button pickTalk = MakeButton("Ролик: просто отвечает", false);
       pickTalk.Click += delegate { PickFace("talk"); };
-      Place(right, pickTalk, 14, ref y, 32);
+      Put(1, pickTalk, 32);
       Button pickJoke = MakeButton("Ролик: шутка", false);
       pickJoke.Click += delegate { PickFace("joke"); };
-      Place(right, pickJoke, 14, ref y, 32);
+      Put(1, pickJoke, 32);
       Button pickMad = MakeButton("Ролик: злится", false);
       pickMad.Click += delegate { PickFace("mad"); };
-      Place(right, pickMad, 14, ref y, 32);
+      Put(1, pickMad, 32);
       Button pickSing = MakeButton("Ролик: поёт", false);
       pickSing.Click += delegate { PickFace("sing"); };
-      Place(right, pickSing, 14, ref y, 32);
-      Place(right, MakeWrap("Ролики без звука. Папка faces рядом с RECH.exe: talk.mp4, joke.mp4, mad.mp4 и sing.mp4. Пока идёт песня, она молчит и не сменяет лицо на разговор."), 14, ref y, 72);
-      Place(right, MakeMute("Лицо в OBS — отдельный источник «Браузер». Вставь ссылку заново и обнови источник. Пока она молчит, там пусто."), 14, ref y, 48);
+      Put(1, pickSing, 32);
+      Put(1, MakeWrap("Ролики без звука. Папка faces рядом с RECH.exe: talk.mp4, joke.mp4, mad.mp4 и sing.mp4. Пока идёт песня, она молчит и не сменяет лицо на разговор."), 72);
+      Put(1, MakeMute("Лицо в OBS — отдельный источник «Браузер». Вставь ссылку заново и обнови источник. Пока она молчит, там пусто."), 48);
       lookBox = new TextBox();
       StyleBox(lookBox);
       lookBox.ReadOnly = true;
       lookBox.Font = new Font("Consolas", 9f);
-      Place(right, lookBox, 14, ref y, 28);
+      Put(1, lookBox, 28);
       Button tryFace = MakeButton("Показать лицо", false);
       tryFace.Click += delegate
       {
@@ -5989,25 +5994,25 @@ namespace Rech
         LucyStage.On = was;
         if (lucyState != null) lucyState.Text = LucyStage.File != null && LucyStage.File.Length > 0 ? "Лицо: " + Path.GetFileName(LucyStage.File) + ". Обнови источник лица в OBS." : (LucyStage.Miss.Length > 0 ? LucyStage.Miss : "Ролика нет.");
       };
-      Place(right, tryFace, 14, ref y, 32);
+      Put(1, tryFace, 32);
       lucyState = MakeWrap("Если написали «Люси» на любой площадке, она отвечает здесь и пишет в чат Twitch от аккаунта Lucy. Видеокарту не трогает.");
-      Place(right, lucyState, 14, ref y, 58);
+      Put(1, lucyState, 58);
       lucyInstall = MakeButton("Скачать Люси", true);
       lucyInstall.Click += delegate { StartLucyInstall(); };
-      Place(right, lucyInstall, 14, ref y, 36);
+      Put(1, lucyInstall, 36);
       Button lucyLogin = MakeButton("Войти как Lucy — это её аккаунт", true);
       lucyLogin.Click += delegate { Rewards.BeginBotLogin(twitchClient == null ? "" : twitchClient.Text); };
-      Place(right, lucyLogin, 14, ref y, 36);
+      Put(1, lucyLogin, 36);
       botState = MakeWrap("Люси: НЕ вошла. Кнопка ниже — её аккаунт, не твой. На Twitch сделай его модератором.");
-      Place(right, botState, 14, ref y, 48);
-      Place(right, MakeWrap("Два входа, не путай. «Войти как Lucy» — аккаунт Люси, чтобы писать и мутить. «Войти для наград» — твой канал, чтобы ловить баллы. Если статус стал «вылетела» или «ключ протух», нажми тот же вход ещё раз."), 14, ref y, 72);
-      Place(right, MakeMute("Что Люси знает. Можно править."), 14, ref y, 18);
+      Put(1, botState, 48);
+      Put(1, MakeWrap("Два входа, не путай. «Войти как Lucy» — аккаунт Люси, чтобы писать и мутить. «Войти для наград» — твой канал, чтобы ловить баллы. Если статус стал «вылетела» или «ключ протух», нажми тот же вход ещё раз."), 72);
+      Put(1, MakeMute("Что Люси знает. Можно править."), 18);
       lucyFacts = new TextBox();
       StyleBox(lucyFacts);
       lucyFacts.Multiline = true;
       lucyFacts.ScrollBars = ScrollBars.Vertical;
       lucyFacts.Text = LucyLocal.Card;
-      Place(right, lucyFacts, 14, ref y, 110);
+      Put(1, lucyFacts, 110);
       Button loreButton = MakeButton("Лор и память", false);
       loreButton.Click += delegate
       {
@@ -6019,38 +6024,38 @@ namespace Rech
         LoreForm lore = new LoreForm();
         lore.Show(this);
       };
-      Place(right, loreButton, 14, ref y, 36);
-      Place(right, MakeCaption("НАГРАДЫ"), 14, ref y, 28);
-      Place(right, MakeWrap("Награда «Заказать песню» ставит песню Люси с ghostpot.ru. Можно написать название. Если пусто или такой нет, она споёт из текущего мира. Чужие ролики не включаются."), 14, ref y, 72);
-      Place(right, MakeMute("Client ID с dev.twitch.tv"), 14, ref y, 18);
+      Put(1, loreButton, 36);
+      Put(2, MakeCaption("НАГРАДЫ"), 28);
+      Put(2, MakeWrap("Награда «Заказать песню» ставит песню Люси с ghostpot.ru. Можно написать название. Если пусто или такой нет, она споёт из текущего мира. Чужие ролики не включаются."), 72);
+      Put(2, MakeMute("Client ID с dev.twitch.tv"), 18);
       twitchClient = new TextBox();
       StyleBox(twitchClient);
-      Place(right, twitchClient, 14, ref y, 28);
+      Put(2, twitchClient, 28);
       Button twitchLogin = MakeButton("Войти для наград — это твой канал", true);
       twitchLogin.Click += delegate { Rewards.BeginLogin(twitchClient.Text); };
-      Place(right, twitchLogin, 14, ref y, 36);
+      Put(2, twitchLogin, 36);
       rewardState = MakeWrap("Награды: нет входа. Жми «Войти для наград» своим каналом.");
-      Place(right, rewardState, 14, ref y, 48);
-      Place(right, MakeMute("Награда песни"), 14, ref y, 18);
+      Put(2, rewardState, 48);
+      Put(2, MakeMute("Награда песни"), 18);
       songRewardBox = new TextBox();
       StyleBox(songRewardBox);
       songRewardBox.Text = "Заказать песню";
-      Place(right, songRewardBox, 14, ref y, 28);
-      Place(right, MakeMute("Награда вопроса Люси"), 14, ref y, 18);
+      Put(2, songRewardBox, 28);
+      Put(2, MakeMute("Награда вопроса Люси"), 18);
       lucyRewardBox = new TextBox();
       StyleBox(lucyRewardBox);
       lucyRewardBox.Text = "Поговорить с Люси";
-      Place(right, lucyRewardBox, 14, ref y, 28);
-      Place(right, MakeMute("Награда картинки. На Twitch и VK назови её «Картинка». Файл уходит на Яндекс.Диск."), 14, ref y, 36);
+      Put(2, lucyRewardBox, 28);
+      Put(2, MakeMute("Награда картинки. На Twitch и VK назови её «Картинка». Файл уходит на Яндекс.Диск."), 36);
       picRewardBox = new TextBox();
       StyleBox(picRewardBox);
       picRewardBox.Text = "Картинка";
-      Place(right, picRewardBox, 14, ref y, 28);
+      Put(2, picRewardBox, 28);
       picVkBox = new TextBox();
-      Place(right, MakeMute("Разрешение Диска, не ClientID и не секрет со страницы приложения."), 14, ref y, 18);
+      Put(2, MakeMute("Разрешение Диска, не ClientID и не секрет со страницы приложения."), 18);
       yaTokenBox = new TextBox();
       StyleBox(yaTokenBox);
-      Place(right, yaTokenBox, 14, ref y, 28);
+      Put(2, yaTokenBox, 28);
       Button allowDisk = MakeButton("Разрешить Диск", true);
       allowDisk.Click += delegate
       {
@@ -6062,12 +6067,12 @@ namespace Rech
         {
         }
       };
-      Place(right, allowDisk, 14, ref y, 36);
+      Put(2, allowDisk, 36);
       Button checkDisk = MakeButton("Проверить Диск", false);
       checkDisk.Click += delegate { CheckDisk(); };
-      Place(right, checkDisk, 14, ref y, 36);
+      Put(2, checkDisk, 36);
       picLimitLabel = MakeMute("На ник 10");
-      Place(right, picLimitLabel, 14, ref y, 18);
+      Put(2, picLimitLabel, 18);
       picLimitBar = new TrackBar();
       picLimitBar.Minimum = 0;
       picLimitBar.Maximum = 30;
@@ -6075,24 +6080,24 @@ namespace Rech
       picLimitBar.Value = 10;
       picLimitBar.BackColor = Surface;
       QuietBar(picLimitBar);
-      Place(right, picLimitBar, 14, ref y, 36);
+      Put(2, picLimitBar, 36);
       vkLinkBox = new TextBox();
       vkGroupBox = new TextBox();
       vkTokenBox = new TextBox();
       maxLinkBox = new TextBox();
       maxChatBox = new TextBox();
       maxTokenBox = new TextBox();
-      Place(right, MakeMute("Cloudflare Account ID. Flux, не больше 100 картинок в день"), 14, ref y, 18);
+      Put(2, MakeMute("Cloudflare Account ID. Flux, не больше 100 картинок в день"), 18);
       cfAccountBox = new TextBox();
       StyleBox(cfAccountBox);
-      Place(right, cfAccountBox, 14, ref y, 28);
-      Place(right, MakeMute("Токен Cloudflare, право Workers AI. В чат его не пиши"), 14, ref y, 18);
+      Put(2, cfAccountBox, 28);
+      Put(2, MakeMute("Токен Cloudflare, право Workers AI. В чат его не пиши"), 18);
       cfTokenBox = new TextBox();
       StyleBox(cfTokenBox);
-      Place(right, cfTokenBox, 14, ref y, 28);
+      Put(2, cfTokenBox, 28);
       songSecondsBox = new TextBox();
       songVolumeLabel = MakeMute("Музыка 100");
-      Place(right, songVolumeLabel, 14, ref y, 18);
+      Put(2, songVolumeLabel, 18);
       songVolumeBar = new TrackBar();
       songVolumeBar.Minimum = 0;
       songVolumeBar.Maximum = 100;
@@ -6100,26 +6105,26 @@ namespace Rech
       songVolumeBar.Value = 100;
       songVolumeBar.BackColor = Surface;
       QuietBar(songVolumeBar);
-      Place(right, songVolumeBar, 14, ref y, 36);
-      Place(right, MakeMute("Кто слышит песню"), 14, ref y, 18);
+      Put(2, songVolumeBar, 36);
+      Put(2, MakeMute("Кто слышит песню"), 18);
       songHearBox = new ComboBox();
       songHearBox.DropDownStyle = ComboBoxStyle.DropDownList;
       songHearBox.Items.AddRange(new object[] { "Всем: я и зрители", "Только я", "Только зрители" });
       songHearBox.SelectedIndex = 0;
       StyleCombo(songHearBox);
       songHearBox.SelectedIndexChanged += delegate { if (!loading) SaveSettings(); };
-      Place(right, songHearBox, 14, ref y, 28);
+      Put(2, songHearBox, 28);
       songYtBox = MakeCheck("YouTube");
       songRuBox = MakeCheck("Rutube");
       songVkBox = MakeCheck("VK Видео");
       songNow = MakeWrap("Сейчас тишина.");
-      Place(right, songNow, 14, ref y, 40);
+      Put(2, songNow, 40);
       Button testSong = MakeButton("Проверить песню", true);
       testSong.Click += delegate { Rewards.Preview(); };
-      Place(right, testSong, 14, ref y, 36);
+      Put(2, testSong, 36);
       Button skipSong = MakeButton("Остановить песни", false);
       skipSong.Click += delegate { Rewards.StopAll(); };
-      Place(right, skipSong, 14, ref y, 36);
+      Put(2, skipSong, 36);
       Button hideSong = MakeButton("Скрыть плеер", false);
       hideSong.Click += delegate
       {
@@ -6127,65 +6132,65 @@ namespace Rech
         Rewards.Conceal(on);
         hideSong.Text = on ? "Показать плеер" : "Скрыть плеер";
       };
-      Place(right, hideSong, 14, ref y, 36);
-      Place(right, MakeMute("По умолчанию песню слышишь ты и зрители. «Только я» не играет в источнике плеера. «Только зрители» молчит у тебя, звук в OBS у ссылки плеера."), 14, ref y, 54);
+      Put(2, hideSong, 36);
+      Put(2, MakeMute("По умолчанию песню слышишь ты и зрители. «Только я» не играет в источнике плеера. «Только зрители» молчит у тебя, звук в OBS у ссылки плеера."), 54);
       playerBox = new TextBox();
       StyleBox(playerBox);
       playerBox.ReadOnly = true;
       playerBox.Font = new Font("Consolas", 9f);
-      Place(right, playerBox, 14, ref y, 28);
+      Put(2, playerBox, 28);
       sileroUrl = new TextBox();
       sileroOutputs = new TextBox();
       rateLabel = MakeMute("Скорость 100%");
-      Place(right, rateLabel, 14, ref y, 18);
+      Put(0, rateLabel, 18);
       rateBar = new TrackBar();
       rateBar.Minimum = 80;
       rateBar.Maximum = 130;
       rateBar.TickFrequency = 10;
       rateBar.BackColor = Surface;
       QuietBar(rateBar);
-      Place(right, rateBar, 14, ref y, 36);
+      Put(0, rateBar, 36);
       volumeLabel = MakeMute("Голос 100");
-      Place(right, volumeLabel, 14, ref y, 18);
+      Put(0, volumeLabel, 18);
       volumeBar = new TrackBar();
       volumeBar.Minimum = 0;
       volumeBar.Maximum = 100;
       volumeBar.TickFrequency = 10;
       volumeBar.BackColor = Surface;
       QuietBar(volumeBar);
-      Place(right, volumeBar, 14, ref y, 36);
+      Put(0, volumeBar, 36);
       authorBox = MakeCheck("Называть ник");
-      Place(right, authorBox, 14, ref y, 28);
+      Put(0, authorBox, 28);
       emoteBox = MakeCheck("Не читать коды смайлов");
-      Place(right, emoteBox, 14, ref y, 28);
+      Put(0, emoteBox, 28);
       swearBox = MakeCheck("Не читать ругань");
       swearBox.Checked = true;
-      Place(right, swearBox, 14, ref y, 28);
-      Place(right, MakeMute("Можно. Эти слова не мутят и читаются"), 14, ref y, 18);
+      Put(0, swearBox, 28);
+      Put(0, MakeMute("Можно. Эти слова не мутят и читаются"), 18);
       allowBox = new TextBox();
       StyleBox(allowBox);
       allowBox.Multiline = true;
       allowBox.ScrollBars = ScrollBars.Vertical;
       allowBox.Text = "бля\r\nблять\r\nблядь";
-      Place(right, allowBox, 14, ref y, 72);
+      Put(0, allowBox, 72);
       englishBox = MakeCheck("Читать английский");
-      Place(right, englishBox, 14, ref y, 28);
+      Put(0, englishBox, 28);
       numberBox = MakeCheck("Читать цифры");
-      Place(right, numberBox, 14, ref y, 28);
-      Place(right, MakeMute("Ждать перед речью, секунд"), 14, ref y, 18);
+      Put(0, numberBox, 28);
+      Put(0, MakeMute("Ждать перед речью, секунд"), 18);
       delayBox = new NumericUpDown();
       delayBox.Minimum = 0;
       delayBox.Maximum = 30;
       delayBox.BackColor = Raised;
       delayBox.ForeColor = Ink;
       delayBox.BorderStyle = BorderStyle.FixedSingle;
-      Place(right, delayBox, 14, ref y, 28);
+      Put(0, delayBox, 28);
       pauseButton = MakeButton("Пауза голоса", false);
       pauseButton.Click += delegate { TogglePause(); };
-      Place(right, pauseButton, 14, ref y, 36);
+      Put(0, pauseButton, 36);
       pauseKeyBox = MakeCheck("Клавиша паузы");
       pauseKeyBox.Checked = true;
-      Place(right, pauseKeyBox, 14, ref y, 28);
+      Put(0, pauseKeyBox, 28);
       pauseKeyButton = MakeButton("Клавиша: F8", false);
       pauseKeyButton.Click += delegate
       {
@@ -6193,37 +6198,36 @@ namespace Rech
         armHotkey = false;
         pauseKeyButton.Text = "Нажми клавишу…";
       };
-      Place(right, pauseKeyButton, 14, ref y, 36);
-      Place(right, MakeMute("Словарь ников: ник = как сказать"), 14, ref y, 18);
+      Put(0, pauseKeyButton, 36);
+      Put(0, MakeMute("Словарь ников: ник = как сказать"), 18);
       nickBox = new TextBox();
       StyleBox(nickBox);
       nickBox.Multiline = true;
       nickBox.ScrollBars = ScrollBars.Vertical;
-      Place(right, nickBox, 14, ref y, 72);
-      Place(right, MakeMute("Не показывать и не читать"), 14, ref y, 18);
+      Put(0, nickBox, 72);
+      Put(0, MakeMute("Не показывать и не читать"), 18);
       muteBox = new TextBox();
       StyleBox(muteBox);
       muteBox.Multiline = true;
       muteBox.ScrollBars = ScrollBars.Vertical;
-      Place(right, muteBox, 14, ref y, 72);
+      Put(0, muteBox, 72);
       errorLabel = MakeWrap("");
       errorLabel.ForeColor = Live;
-      Place(right, errorLabel, 14, ref y, 48);
+      Put(0, errorLabel, 48);
       Button test = MakeButton("Проверить голос", true);
       test.Click += delegate { speaker.Say("Проверка. Этот голос останется до конца эфира.", true); };
-      Place(right, test, 14, ref y, 36);
+      Put(0, test, 36);
       Button clearQueue = MakeButton("Очистить очередь", false);
       clearQueue.Click += delegate { speaker.ClearQueue(); };
-      Place(right, clearQueue, 14, ref y, 36);
-      y += 8;
-      Place(right, MakeCaption("ОКНО"), 14, ref y, 28);
-      Label obs = MakeWrap("Ссылка только для OBS: источник «Браузер», вставить, затем Refresh. Это другой чат, не моё окно. Размер ставишь в OBS. Сообщение само гаснет.");
-      Place(right, obs, 14, ref y, 72);
+      Put(0, clearQueue, 36);
+      Put(3, MakeCaption("ЭФИР"), 28);
+      Label obs = MakeWrap("Ссылка ниже — чат для зрителей в OBS. «Моё окно» — только тебе. Шрифт зрительского чата чуть ниже, в этом же разделе.");
+      Put(3, obs, 72);
       urlBox = new TextBox();
       StyleBox(urlBox);
       urlBox.ReadOnly = true;
       urlBox.Font = new Font("Consolas", 9f);
-      Place(right, urlBox, 14, ref y, 28);
+      Put(3, urlBox, 28);
       Button copyUrl = MakeButton("Копировать ссылку", true);
       copyUrl.Click += delegate
       {
@@ -6236,90 +6240,90 @@ namespace Rech
         {
         }
       };
-      Place(right, copyUrl, 14, ref y, 36);
+      Put(3, copyUrl, 36);
       chatWindowButton = MakeButton("Моё окно — читать", false);
       chatWindowButton.Click += delegate { ToggleChatWindow(); };
-      Place(right, chatWindowButton, 14, ref y, 36);
+      Put(3, chatWindowButton, 36);
       sizeHint = MakeWrap("Моё окно — на компьютере, с прокруткой. В эфир не попадает.");
-      Place(right, sizeHint, 14, ref y, 36);
+      Put(3, sizeHint, 36);
       chatWBox = new TextBox();
       StyleBox(chatWBox);
       chatWBox.Text = "720";
-      Place(right, MakeMute("Ширина моего окна"), 14, ref y, 18);
-      Place(right, chatWBox, 14, ref y, 28);
+      Put(3, MakeMute("Ширина моего окна"), 18);
+      Put(3, chatWBox, 28);
       chatHBox = new TextBox();
       StyleBox(chatHBox);
       chatHBox.Text = "460";
-      Place(right, MakeMute("Высота моего окна"), 14, ref y, 18);
-      Place(right, chatHBox, 14, ref y, 28);
+      Put(3, MakeMute("Высота моего окна"), 18);
+      Put(3, chatHBox, 28);
       chromaBox = MakeCheck("Пурпурный фон у студии");
-      Place(right, chromaBox, 14, ref y, 28);
+      Put(3, chromaBox, 28);
       topBox = MakeCheck("Студия поверх других окон");
-      Place(right, topBox, 14, ref y, 28);
+      Put(3, topBox, 28);
       platformMarkBox = MakeCheck("Метка площадки");
-      Place(right, platformMarkBox, 14, ref y, 28);
+      Put(3, platformMarkBox, 28);
       timeBox = MakeCheck("Время");
-      Place(right, timeBox, 14, ref y, 28);
-      Place(right, MakeCaption("ТЕКСТ В OBS"), 14, ref y, 28);
+      Put(3, timeBox, 28);
+      Put(3, MakeCaption("ТЕКСТ В OBS"), 28);
       fontBox = new ComboBox();
       fontBox.DropDownStyle = ComboBoxStyle.DropDownList;
       fontBox.Items.AddRange(new object[] { "Segoe UI", "Arial", "Verdana", "Tahoma", "Trebuchet MS", "Georgia", "Impact", "Bahnschrift", "Consolas", "Cascadia Mono", "Comic Sans MS", "Times New Roman" });
       StyleCombo(fontBox);
-      Place(right, fontBox, 14, ref y, 28);
+      Put(3, fontBox, 28);
       fontSizeLabel = MakeMute("Размер 32");
-      Place(right, fontSizeLabel, 14, ref y, 18);
+      Put(3, fontSizeLabel, 18);
       fontSizeBar = new TrackBar();
       fontSizeBar.Minimum = 18;
       fontSizeBar.Maximum = 72;
       fontSizeBar.TickFrequency = 6;
       fontSizeBar.BackColor = Surface;
       QuietBar(fontSizeBar);
-      Place(right, fontSizeBar, 14, ref y, 36);
+      Put(3, fontSizeBar, 36);
       fontBoldBox = MakeCheck("Жирный");
-      Place(right, fontBoldBox, 14, ref y, 28);
+      Put(3, fontBoldBox, 28);
       textColorButton = MakeButton("Цвет текста", false);
       textColorButton.Click += delegate { PickColor(textColorButton); };
-      Place(right, textColorButton, 14, ref y, 32);
+      Put(3, textColorButton, 32);
       nickColorButton = MakeButton("Цвет ника", false);
       nickColorButton.Click += delegate { PickColor(nickColorButton); };
-      Place(right, nickColorButton, 14, ref y, 32);
-      Place(right, MakeMute("Край букв"), 14, ref y, 18);
+      Put(3, nickColorButton, 32);
+      Put(3, MakeMute("Край букв"), 18);
       strokeBox = new ComboBox();
       strokeBox.DropDownStyle = ComboBoxStyle.DropDownList;
       strokeBox.Items.AddRange(new object[] { "Тень", "Обводка", "Без края" });
       StyleCombo(strokeBox);
-      Place(right, strokeBox, 14, ref y, 28);
+      Put(3, strokeBox, 28);
       plateBox = MakeCheck("Тёмная подложка");
-      Place(right, plateBox, 14, ref y, 28);
-      Place(right, MakeMute("Где строки"), 14, ref y, 18);
+      Put(3, plateBox, 28);
+      Put(3, MakeMute("Где строки"), 18);
       alignBox = new ComboBox();
       alignBox.DropDownStyle = ComboBoxStyle.DropDownList;
       alignBox.Items.AddRange(new object[] { "Снизу", "Сверху" });
       StyleCombo(alignBox);
-      Place(right, alignBox, 14, ref y, 28);
+      Put(3, alignBox, 28);
       linesLabel = MakeMute("Строк на экране 8");
-      Place(right, linesLabel, 14, ref y, 18);
+      Put(3, linesLabel, 18);
       linesBar = new TrackBar();
       linesBar.Minimum = 3;
       linesBar.Maximum = 16;
       linesBar.TickFrequency = 1;
       linesBar.BackColor = Surface;
       QuietBar(linesBar);
-      Place(right, linesBar, 14, ref y, 36);
+      Put(3, linesBar, 36);
       holdLabel = MakeMute("Держать 8 сек");
-      Place(right, holdLabel, 14, ref y, 18);
+      Put(3, holdLabel, 18);
       holdBar = new TrackBar();
       holdBar.Minimum = 2;
       holdBar.Maximum = 20;
       holdBar.TickFrequency = 1;
       holdBar.BackColor = Surface;
       QuietBar(holdBar);
-      Place(right, holdBar, 14, ref y, 36);
+      Put(3, holdBar, 36);
       stayBox = MakeCheck("Чат в OBS не гаснет");
       stayBox.Checked = true;
-      Place(right, stayBox, 14, ref y, 28);
+      Put(3, stayBox, 28);
       rehearsalBox = MakeCheck("Учебные фразы");
-      Place(right, rehearsalBox, 14, ref y, 28);
+      Put(3, rehearsalBox, 28);
       Button clearChat = MakeButton("Очистить ленту", false);
       clearChat.Click += delegate
       {
@@ -6328,8 +6332,7 @@ namespace Rech
         emptyLabel.Visible = true;
         SyncHub();
       };
-      Place(right, clearChat, 14, ref y, 36);
-      right.AutoScrollMinSize = new Size(0, y + 24);
+      Put(3, clearChat, 36);
 
       center = new Panel();
       center.Dock = DockStyle.Fill;
@@ -9245,9 +9248,119 @@ namespace Rech
       return "TW";
     }
 
+    void BuildMenu()
+    {
+      string[] titles = new string[] { "Голос", "Люси", "Награды", "Эфир" };
+      string[] hints = new string[] { "Как она читает чат", "Ответы, лицо, её вход", "Песни, картинки, баллы", "Окна и текст в OBS" };
+      Panel nav = new Panel();
+      nav.Dock = DockStyle.Top;
+      nav.Height = 198;
+      nav.BackColor = Canvas;
+      Panel deck = new Panel();
+      deck.Dock = DockStyle.Fill;
+      deck.BackColor = Surface;
+      sheets = new Panel[4];
+      sheetY = new int[4];
+      menuKeys = new Panel[4];
+      int i;
+      for (i = 0; i < 4; i++)
+      {
+        int index = i;
+        Panel key = new Panel();
+        key.SetBounds(10, 8 + i * 46, 364, 42);
+        key.BackColor = Surface;
+        key.Cursor = Cursors.Hand;
+        key.Tag = index;
+        key.Click += delegate { ShowSheet(index); };
+        key.Paint += delegate(object sender, PaintEventArgs e)
+        {
+          Panel row = (Panel)sender;
+          int kind = (int)row.Tag;
+          bool on = kind == menuOn;
+          e.Graphics.Clear(on ? Gold : Raised);
+          Color ink = on ? Canvas : Ink;
+          Color hint = on ? Color.FromArgb(92, 58, 28) : Mute;
+          DrawMenuIcon(e.Graphics, kind, ink);
+          using (Font titleFont = new Font("Segoe UI", 11f, FontStyle.Bold))
+          using (Font hintFont = new Font("Segoe UI", 8f))
+          using (Brush titleBrush = new SolidBrush(ink))
+          using (Brush hintBrush = new SolidBrush(hint))
+          {
+            e.Graphics.DrawString(titles[kind], titleFont, titleBrush, 40, 3);
+            e.Graphics.DrawString(hints[kind], hintFont, hintBrush, 40, 22);
+          }
+        };
+        nav.Controls.Add(key);
+        menuKeys[i] = key;
+        Panel page = new Panel();
+        page.Dock = DockStyle.Fill;
+        page.AutoScroll = true;
+        page.BackColor = Surface;
+        page.Visible = i == 0;
+        sheets[i] = page;
+        sheetY[i] = 10;
+        deck.Controls.Add(page);
+      }
+      right.Controls.Add(deck);
+      right.Controls.Add(nav);
+    }
+
+    void ShowSheet(int index)
+    {
+      menuOn = index;
+      int i;
+      for (i = 0; i < sheets.Length; i++)
+      {
+        sheets[i].Visible = i == index;
+        menuKeys[i].Invalidate();
+      }
+    }
+
+    void Put(int sheet, Control child, int height)
+    {
+      int y = sheetY[sheet];
+      Place(sheets[sheet], child, 12, ref y, height);
+      sheetY[sheet] = y;
+      sheets[sheet].AutoScrollMinSize = new Size(0, y + 28);
+    }
+
+    static void DrawMenuIcon(Graphics g, int kind, Color color)
+    {
+      g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+      using (Pen pen = new Pen(color, 1.7f))
+      {
+        if (kind == 0)
+        {
+          g.DrawEllipse(pen, 14, 8, 10, 14);
+          g.DrawArc(pen, 11, 12, 16, 14, 10, 160);
+          g.DrawLine(pen, 19, 26, 19, 31);
+          g.DrawLine(pen, 15, 31, 23, 31);
+        }
+        else if (kind == 1)
+        {
+          g.DrawEllipse(pen, 13, 7, 12, 12);
+          g.DrawArc(pen, 8, 20, 22, 16, 200, 140);
+        }
+        else if (kind == 2)
+        {
+          g.DrawRectangle(pen, 10, 16, 18, 14);
+          g.DrawLine(pen, 19, 16, 19, 30);
+          g.DrawLine(pen, 10, 22, 28, 22);
+          g.DrawArc(pen, 12, 9, 8, 8, 200, 200);
+          g.DrawArc(pen, 18, 9, 8, 8, 140, 200);
+        }
+        else
+        {
+          g.DrawRectangle(pen, 8, 9, 22, 15);
+          g.DrawLine(pen, 19, 24, 19, 30);
+          g.DrawLine(pen, 13, 30, 25, 30);
+        }
+      }
+    }
+
     static void Place(Control parent, Control child, int x, ref int y, int height)
     {
-      child.SetBounds(x, y, 292, height);
+      child.SetBounds(x, y, 348, height);
       parent.Controls.Add(child);
       y += height + 8;
     }

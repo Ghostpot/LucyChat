@@ -105,6 +105,7 @@ namespace Rech
     public string UserId;
     public bool Reward;
     public string RewardName;
+    public bool Desk;
   }
 
   static class Swear
@@ -531,6 +532,7 @@ namespace Rech
     public string OverlayAlign;
     public int OverlayLines;
     public int OverlayHold;
+    public bool? OverlayStay;
     public int ChatX;
     public int ChatY;
     public int ChatW;
@@ -622,6 +624,7 @@ namespace Rech
     public string Text;
     public string Time;
     public string Icons;
+    public bool Show = true;
   }
 
   public class Net
@@ -5633,6 +5636,7 @@ namespace Rech
     CheckBox plateBox;
     ComboBox alignBox;
     TrackBar linesBar;
+    CheckBox stayBox;
     Label linesLabel;
     TrackBar holdBar;
     Label holdLabel;
@@ -5991,11 +5995,12 @@ namespace Rech
       lucyInstall = MakeButton("Скачать Люси", true);
       lucyInstall.Click += delegate { StartLucyInstall(); };
       Place(right, lucyInstall, 14, ref y, 36);
-      Button lucyLogin = MakeButton("Войти как Lucy", true);
+      Button lucyLogin = MakeButton("Войти как Lucy — это её аккаунт", true);
       lucyLogin.Click += delegate { Rewards.BeginBotLogin(twitchClient == null ? "" : twitchClient.Text); };
       Place(right, lucyLogin, 14, ref y, 36);
-      botState = MakeWrap("Для мута и бана войди как Lucy ещё раз. Аккаунт должен быть модератором канала.");
+      botState = MakeWrap("Люси: НЕ вошла. Кнопка ниже — её аккаунт, не твой. На Twitch сделай его модератором.");
       Place(right, botState, 14, ref y, 48);
+      Place(right, MakeWrap("Два входа, не путай. «Войти как Lucy» — аккаунт Люси, чтобы писать и мутить. «Войти для наград» — твой канал, чтобы ловить баллы. Если статус стал «вылетела» или «ключ протух», нажми тот же вход ещё раз."), 14, ref y, 72);
       Place(right, MakeMute("Что Люси знает. Можно править."), 14, ref y, 18);
       lucyFacts = new TextBox();
       StyleBox(lucyFacts);
@@ -6021,10 +6026,10 @@ namespace Rech
       twitchClient = new TextBox();
       StyleBox(twitchClient);
       Place(right, twitchClient, 14, ref y, 28);
-      Button twitchLogin = MakeButton("Войти для наград", true);
+      Button twitchLogin = MakeButton("Войти для наград — это твой канал", true);
       twitchLogin.Click += delegate { Rewards.BeginLogin(twitchClient.Text); };
       Place(right, twitchLogin, 14, ref y, 36);
-      rewardState = MakeWrap("Награды ждут вход через Twitch.");
+      rewardState = MakeWrap("Награды: нет входа. Жми «Войти для наград» своим каналом.");
       Place(right, rewardState, 14, ref y, 48);
       Place(right, MakeMute("Награда песни"), 14, ref y, 18);
       songRewardBox = new TextBox();
@@ -6310,6 +6315,9 @@ namespace Rech
       holdBar.BackColor = Surface;
       QuietBar(holdBar);
       Place(right, holdBar, 14, ref y, 36);
+      stayBox = MakeCheck("Чат в OBS не гаснет");
+      stayBox.Checked = true;
+      Place(right, stayBox, 14, ref y, 28);
       rehearsalBox = MakeCheck("Учебные фразы");
       Place(right, rehearsalBox, 14, ref y, 28);
       Button clearChat = MakeButton("Очистить ленту", false);
@@ -6489,6 +6497,7 @@ namespace Rech
       uiTimer.Tick += delegate
       {
         Rewards.Tick();
+        Rewards.ProbeSoon();
         RefreshState();
       };
       uiTimer.Start();
@@ -6621,6 +6630,7 @@ namespace Rech
       alignBox.SelectedIndexChanged += look;
       linesBar.Scroll += look;
       holdBar.Scroll += look;
+      if (stayBox != null) stayBox.CheckedChanged += look;
       platformMarkBox.CheckedChanged += look;
       timeBox.CheckedChanged += look;
       EventHandler sizeApply = delegate
@@ -7506,6 +7516,7 @@ namespace Rech
       row.Author = Swear.Apply(message.Author, swearBox == null || swearBox.Checked);
       row.Text = Swear.Apply(message.Text, swearBox == null || swearBox.Checked);
       row.Icons = message.Icons;
+      row.Show = !message.Desk && !Rewards.IsPicture(message.Text);
       EmoteArt.Want(row.Icons);
       row.Time = FormatTime(message.Ts);
       chat.Items.Add(row);
@@ -8808,12 +8819,12 @@ namespace Rech
       return prefs;
     }
 
-    void OnRewardLine(string author, string text, bool speak)
+    void OnRewardLine(string author, string text, bool speak, bool stream)
     {
       if (IsDisposed) return;
       if (InvokeRequired)
       {
-        BeginInvoke(new Action(delegate { OnRewardLine(author, text, speak); }));
+        BeginInvoke(new Action(delegate { OnRewardLine(author, text, speak, stream); }));
         return;
       }
       ChatMessage message = new ChatMessage();
@@ -8824,38 +8835,38 @@ namespace Rech
       message.Text = text == null ? "" : text;
       message.Ts = Net.Now();
       message.Fresh = false;
+      message.Desk = !stream;
       AddMessage(message);
-      if (speak && !LucyStage.Singing)
+      if (!speak || LucyStage.Singing) return;
+      speaker.Say(message.Text, true, "xenia");
+      string line = message.Text;
+      Thread post = new Thread(delegate()
       {
-        speaker.Say(message.Text, true, "xenia");
-        string line = message.Text;
-        Thread post = new Thread(delegate()
+        string note = Rewards.PostToTwitch(line);
+        if (note == null || note.Length == 0 || IsDisposed) return;
+        try
         {
-          string note = Rewards.PostToTwitch(line);
-          if (note == null || note.Length == 0 || IsDisposed) return;
-          try
+          BeginInvoke(new Action(delegate
           {
-            BeginInvoke(new Action(delegate
-            {
-              if (lucyState != null) lucyState.Text = note;
-              ChatMessage fail = new ChatMessage();
-              fail.Id = "lucy-fail:" + Guid.NewGuid().ToString("N");
-              fail.Platform = "lucy";
-              fail.Author = "Люси";
-              fail.Text = note;
-              fail.Ts = Net.Now();
-              fail.Fresh = false;
-              AddMessage(fail);
-            }));
-          }
-          catch
-          {
-          }
-        });
-        post.IsBackground = true;
-        post.Name = "LucyTwitch";
-        post.Start();
-      }
+            if (lucyState != null) lucyState.Text = note;
+            ChatMessage fail = new ChatMessage();
+            fail.Id = "lucy-fail:" + Guid.NewGuid().ToString("N");
+            fail.Platform = "lucy";
+            fail.Author = "Люси";
+            fail.Text = note;
+            fail.Ts = Net.Now();
+            fail.Fresh = false;
+            fail.Desk = true;
+            AddMessage(fail);
+          }));
+        }
+        catch
+        {
+        }
+      });
+      post.IsBackground = true;
+      post.Name = "LucyTwitch";
+      post.Start();
     }
 
     void RefreshState()
@@ -9039,6 +9050,7 @@ namespace Rech
       settings.OverlayAlign = alignBox.SelectedIndex == 1 ? "top" : "bottom";
       settings.OverlayLines = linesBar.Value;
       settings.OverlayHold = holdBar.Value;
+      settings.OverlayStay = stayBox == null || stayBox.Checked;
       settings.ChatX = chatX;
       settings.ChatY = chatY;
       settings.ChatW = chatW;
@@ -9374,6 +9386,7 @@ namespace Rech
       if (hold < 2 || hold > 20) hold = 8;
       holdBar.Value = hold;
       holdLabel.Text = "Держать " + hold.ToString(CultureInfo.InvariantCulture) + " сек";
+      if (stayBox != null) stayBox.Checked = settings.OverlayStay ?? true;
       if (settings.ChatW >= 160 && settings.ChatH >= 90)
       {
         chatX = settings.ChatX;
@@ -9454,7 +9467,7 @@ namespace Rech
       style.Plate = plateBox.Checked;
       style.Align = alignBox.SelectedIndex == 1 ? "top" : "bottom";
       style.Lines = linesBar.Value;
-      style.Hold = holdBar.Value;
+      style.Hold = stayBox != null && stayBox.Checked ? 7200 : holdBar.Value;
       style.Platform = platformMarkBox.Checked;
       style.Clock = timeBox.Checked;
       hub.SetStyle(style);
@@ -9467,7 +9480,7 @@ namespace Rech
       for (i = 0; i < chat.Items.Count; i++)
       {
         Row row = chat.Items[i] as Row;
-        if (row == null) continue;
+        if (row == null || !row.Show) continue;
         OverlayLine line = new OverlayLine();
         line.Author = row.Author == null ? "" : row.Author;
         line.Text = row.Text == null ? "" : row.Text;
@@ -10726,12 +10739,12 @@ namespace Rech
     static int started;
     static HashSet<string> seen = new HashSet<string>();
     static Dictionary<string, DateTime> cool = new Dictionary<string, DateTime>();
-    public static string Status = "Награды Twitch выключены.";
+    public static string Status = "Награды: нет входа. Жми «Войти для наград» своим каналом.";
     public static string UserCode = "";
-    public static event Action<string, string, bool> Line;
+    public static event Action<string, string, bool, bool> Line;
     public static event Action<string, string> TokenReady;
     public static event Action<string, string, string> BotReady;
-    public static string BotStatus = "В чат Twitch ещё не входит.";
+    public static string BotStatus = "Люси: НЕ вошла. Кнопка «Войти как Lucy» — её аккаунт.";
     static string botToken = "";
     static string botRefresh = "";
     static string botUserId = "";
@@ -10777,7 +10790,7 @@ namespace Rech
       clientId = clientId == null ? "" : clientId.Trim();
       if (clientId.Length < 10)
       {
-        Status = "Нужен Client ID с dev.twitch.tv. Секрет приложения не нужен.";
+        Status = "Награды: нет Client ID. Секрет не нужен.";
         return;
       }
       Thread thread = new Thread(delegate() { Login(clientId, false); });
@@ -10791,7 +10804,7 @@ namespace Rech
       clientId = clientId == null ? "" : clientId.Trim();
       if (clientId.Length < 10)
       {
-        BotStatus = "Нужен тот же Client ID. Секрет не нужен.";
+        BotStatus = "Люси: нет Client ID. Секрет не нужен.";
         return;
       }
       Thread thread = new Thread(delegate() { Login(clientId, true); });
@@ -10820,7 +10833,7 @@ namespace Rech
         int interval = root["interval"] == null ? 5 : (int)root["interval"];
         if (interval < 2) interval = 5;
         UserCode = code;
-        say(bot ? "Код " + code + ". Войди на Twitch аккаунтом Lucy и открой twitch.tv/activate." : "Код " + code + ". Открой twitch.tv/activate и подтверди награды.");
+        say(bot ? "Код " + code + ". Войди аккаунтом Lucy на twitch.tv/activate." : "Код " + code + ". Войди СВОИМ каналом на twitch.tv/activate.");
         try
         {
           Process.Start(new ProcessStartInfo("https://www.twitch.tv/activate") { UseShellExecute = true });
@@ -10874,7 +10887,7 @@ namespace Rech
               botUserId = id == null ? "" : id;
             }
             UserCode = "";
-            say(login == null || login.Length == 0 ? "Вход есть. Сделай аккаунт модератором канала." : "В чат пишет " + login + ". Сделай этот аккаунт модератором.");
+            say(login == null || login.Length == 0 ? "Люси: вход есть. Сделай этот аккаунт модератором канала." : "Люси: В ЧАТЕ, " + login + ". Сделай её модератором, если мут не ставится.");
             if (BotReady != null) BotReady(access, refresh, login);
             return;
           }
@@ -10886,16 +10899,65 @@ namespace Rech
             generation = generation + 1;
           }
           UserCode = "";
-          Status = "Twitch подтвердил. Слушаю награды.";
+          Status = "Награды: слушаю.";
           if (TokenReady != null) TokenReady(access, refresh);
           return;
         }
-        say("Код истёк. Нажми вход ещё раз.");
+        say(bot ? "Люси: код истёк. Нажми «Войти как Lucy» ещё раз." : "Награды: код истёк. Нажми «Войти для наград» ещё раз.");
       }
       catch (Exception ex)
       {
         UserCode = "";
         say("Вход не вышел: " + (ex.Message == null ? "ошибка Twitch" : ex.Message));
+      }
+    }
+
+    static DateTime nextProbe = DateTime.UtcNow.AddSeconds(4);
+
+    public static void ProbeSoon()
+    {
+      if (DateTime.UtcNow < nextProbe) return;
+      nextProbe = DateTime.UtcNow.AddMinutes(3);
+      ThreadPool.QueueUserWorkItem(delegate { ProbeNow(); });
+    }
+
+    static void ProbeNow()
+    {
+      string token;
+      string refresh;
+      string client;
+      lock (gate)
+      {
+        token = botToken;
+        refresh = botRefresh;
+        client = prefs.ClientId;
+      }
+      if (token == null || token.Length == 0)
+      {
+        BotStatus = "Люси: НЕ вошла. Кнопка «Войти как Lucy» — её аккаунт.";
+        return;
+      }
+      if (client == null || client.Length < 10)
+      {
+        BotStatus = "Люси: нет Client ID.";
+        return;
+      }
+      try
+      {
+        JObject who = JObject.Parse(GetAuthed("https://api.twitch.tv/helix/users", token, client));
+        string login = (string)who.SelectToken("data[0].login");
+        if (login != null && login.Length > 0) lock (gate) botLogin = login;
+        BotStatus = "Люси: В ЧАТЕ, " + (login == null || login.Length == 0 ? "аккаунт есть" : login) + ".";
+      }
+      catch (Exception ex)
+      {
+        string note = ex.Message == null ? "" : ex.Message;
+        if (note.StartsWith("401", StringComparison.Ordinal) && RefreshBot(client, refresh).Length > 0)
+        {
+          BotStatus = "Люси: В ЧАТЕ. Ключ обновила.";
+          return;
+        }
+        BotStatus = "Люси: ВЫЛЕТЕЛА. Нажми «Войти как Lucy» её аккаунтом.";
       }
     }
 
@@ -10968,7 +11030,7 @@ namespace Rech
           try
           {
             SendIrc(token, nick, channel, text);
-            BotStatus = "Написала ссылку в чат Twitch.";
+            BotStatus = "Люси: В ЧАТЕ. Ссылку отправила.";
             return "";
           }
           catch (Exception ircFail)
@@ -11207,7 +11269,7 @@ namespace Rech
       JToken sent = root.SelectToken("data[0].is_sent");
       if (sent != null && sent.Type == JTokenType.Boolean && (bool)sent)
       {
-        BotStatus = "Написала в чат Twitch.";
+        BotStatus = "Люси: В ЧАТЕ. Написала.";
         return "";
       }
       string why = (string)root.SelectToken("data[0].drop_reason.message");
@@ -11306,10 +11368,12 @@ namespace Rech
           if (next != null && next.Length > 0) botRefresh = next;
         }
         if (BotReady != null) BotReady(access, next == null || next.Length == 0 ? refresh : next, botLogin);
+        BotStatus = "Люси: В ЧАТЕ. Ключ обновила.";
         return access;
       }
       catch
       {
+        BotStatus = "Люси: ВЫЛЕТЕЛА. Нажми «Войти как Lucy» её аккаунтом.";
         return "";
       }
     }
@@ -11482,7 +11546,7 @@ namespace Rech
         }
         if (current.ClientId == null || current.ClientId.Length < 10 || current.Token == null || current.Token.Length < 10)
         {
-          if (UserCode == null || UserCode.Length == 0) Status = "Награды ждут вход через Twitch.";
+          if (UserCode == null || UserCode.Length == 0) Status = "Награды: нет входа. Жми «Войти для наград» своим каналом.";
           Thread.Sleep(1500);
           continue;
         }
@@ -11506,7 +11570,7 @@ namespace Rech
             if (type == "session_reconnect") throw new Exception("Twitch перенёс соединение");
             if (type == "revocation")
             {
-              Status = "Twitch закрыл награды. Войди ещё раз.";
+              Status = "Награды: Twitch закрыл доступ. Войди каналом ещё раз.";
               throw new Exception("revocation");
             }
             if (type == "session_welcome")
@@ -11516,7 +11580,7 @@ namespace Rech
               {
                 Subscribe(current, session);
                 subscribed = true;
-                Status = "Слушаю награды Twitch.";
+                Status = "Награды: слушаю.";
               }
               continue;
             }
@@ -11534,11 +11598,11 @@ namespace Rech
           string note = ex.Message == null ? "" : ex.Message;
           if (note.IndexOf("401", StringComparison.Ordinal) >= 0)
           {
-            if (!Refresh(current)) Status = "Ключ Twitch устарел. Войди ещё раз.";
+            if (!Refresh(current)) Status = "Награды: ключ протух. Жми «Войти для наград» своим каналом.";
           }
           else if (note != "настройки сменились" && note != "revocation")
           {
-            Status = "Награды переподключаются.";
+            Status = "Награды: переподключаюсь.";
           }
           try { if (ws != null) ws.Abort(); } catch { }
           Thread.Sleep(4000);
@@ -11583,7 +11647,7 @@ namespace Rech
           generation = generation + 1;
         }
         if (TokenReady != null) TokenReady(access, refresh == null || refresh.Length == 0 ? current.Refresh : refresh);
-        Status = "Ключ обновился. Слушаю награды.";
+        Status = "Награды: ключ обновился, слушаю.";
         return true;
       }
       catch
@@ -11865,7 +11929,7 @@ namespace Rech
     {
       if (prompt == null || prompt.Trim().Length < 2)
       {
-        Tell("Люси", "Награда картинки пришла, но текста для рисунка нет.", false);
+        Tell("Люси", "Награда картинки пришла, но текста для рисунка нет.", false, false);
         return;
       }
       string flight = (vk ? "vk" : "tg") + "|" + (user == null ? "" : user.Trim().ToLowerInvariant());
@@ -11882,7 +11946,7 @@ namespace Rech
       if (!DiskReady(drawYa))
       {
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Диск не подключён. Нажми «Разрешить Диск» и вставь access_token, не ClientID и не секрет.", false);
+        Tell("Люси", "Диск не подключён. Нажми «Разрешить Диск» и вставь access_token, не ClientID и не секрет.", false, false);
         return;
       }
       int cap = current.PictureLimit;
@@ -11891,7 +11955,7 @@ namespace Rech
       if (!Pictures.Take(user, cap))
       {
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", user + ", на этот ник уже " + cap.ToString(CultureInfo.InvariantCulture) + " картинок.", false);
+        Tell("Люси", user + ", на этот ник уже " + cap.ToString(CultureInfo.InvariantCulture) + " картинок.", false, false);
         return;
       }
       string account = current.CfAccount == null ? "" : current.CfAccount.Trim();
@@ -11900,21 +11964,21 @@ namespace Rech
       {
         Pictures.GiveBack(user, "");
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "Нет ключа Cloudflare. Вставь Account ID и токен Workers AI.", false);
+        Tell("Люси", "Нет ключа Cloudflare. Вставь Account ID и токен Workers AI.", false, false);
         return;
       }
       if (!Pictures.TakeDay())
       {
         Pictures.GiveBack(user, "");
         Cancel(current, broadcaster, rewardId, redemption);
-        Tell("Люси", "На сегодня 100 картинок уже разобрали.", false);
+        Tell("Люси", "На сегодня 100 картинок уже разобрали.", false, false);
         return;
       }
       string nick = user;
       string drawPrompt = prompt;
       string drawAccount = account;
       string drawKey = paintKey;
-      Tell("Люси", nick + ", рисую. Ссылку на Диск напишу, когда картинка будет готова.", false);
+      Tell("Люси", nick + " заказал картинку: " + drawPrompt, false, false);
       Thread draw = new Thread(delegate()
       {
         try
@@ -11922,7 +11986,9 @@ namespace Rech
           byte[] jpg = DrawPicture(drawPrompt, drawAccount, drawKey);
           if (jpg == null || jpg.Length < 800) throw new Exception("пустая картинка");
           string url = UploadYandex(drawYa, nick, jpg);
-          Tell("Люси", nick + ", вот картинка: " + url, true);
+          Tell("Люси", "Ссылка готова, ищи где хочешь.", true, true);
+          Tell("Люси", nick + " · " + url, false, false);
+          try { PostToTwitch(url); } catch { }
         }
         catch (Exception ex)
         {
@@ -11933,7 +11999,7 @@ namespace Rech
           if (drawKey.Length > 0) why = why.Replace(drawKey, "token");
           if (drawYa.Length > 0) why = why.Replace(drawYa, "token");
           why = PaintWhy(why);
-          Tell("Люси", nick + ", картинка не вышла. " + why, false);
+          Tell("Люси", nick + ", картинка не вышла. " + why, false, false);
         }
       });
       draw.IsBackground = true;
@@ -11968,7 +12034,7 @@ namespace Rech
     {
       string english = ToEnglish(prompt);
       if (english.Length == 0) english = prompt;
-      if (!string.Equals(english, prompt, StringComparison.Ordinal)) Tell("Люси", "Рисую так: " + english, false);
+      if (!string.Equals(english, prompt, StringComparison.Ordinal)) Tell("Люси", "Перевод рисунка: " + english, false, false);
       try
       {
         return TryCloudflare(account, token, english);
@@ -11978,7 +12044,7 @@ namespace Rech
         string note = ex.Message == null ? "" : ex.Message;
         if (note.IndexOf("NSFW", StringComparison.OrdinalIgnoreCase) < 0 && note.IndexOf("safety", StringComparison.OrdinalIgnoreCase) < 0) throw;
         string calm = Calm(english);
-        Tell("Люси", "Cloudflare забраковал запрос. Рисую спокойнее: " + calm, false);
+        Tell("Люси", "Cloudflare забраковал запрос. Рисую спокойнее: " + calm, false, false);
         return TryCloudflare(account, token, calm);
       }
     }
@@ -12705,9 +12771,14 @@ namespace Rech
 
     static void Tell(string author, string text, bool speak)
     {
-      if (speak) LucyStage.Show(text);
-      Action<string, string, bool> handler = Line;
-      if (handler != null) handler(author, text, speak);
+      Tell(author, text, speak, true);
+    }
+
+    static void Tell(string author, string text, bool speak, bool stream)
+    {
+      if (speak && stream) LucyStage.Show(text);
+      Action<string, string, bool, bool> handler = Line;
+      if (handler != null) handler(author, text, speak && stream, stream);
     }
 
     static string PostForm(string url, string body)

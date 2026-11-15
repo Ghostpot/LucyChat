@@ -867,6 +867,7 @@ namespace Rech
     int generation;
     readonly object gate = new object();
     readonly Dictionary<string, CancellationTokenSource> gates = new Dictionary<string, CancellationTokenSource>();
+    readonly HashSet<string> alertSeen = new HashSet<string>();
     static string vkToken;
     static long vkTokenExp;
 
@@ -1793,13 +1794,15 @@ namespace Rech
     {
       string token = AlertToken(source.Input);
       if (token.Length < 8) throw new HaltException("Нужна целиком ссылка виджета DonationAlerts из адресной строки.", 60000);
-      string preferred = await AlertSocket(token, ct);
+      string group = AlertGroup(source.Input);
+      string preferred = await AlertSocket(token, group, ct);
       List<string> urls = new List<string>();
-      urls.Add(preferred);
-      urls.Add("wss://socket11.donationalerts.com");
-      urls.Add("wss://socket.donationalerts.com");
+      AddAlertHost(urls, preferred);
+      AddAlertHost(urls, "wss://socket4.donationalerts.com:443");
+      AddAlertHost(urls, "wss://socket11.donationalerts.com:443");
+      AddAlertHost(urls, "wss://socket.donationalerts.com:443");
       int n;
-      for (n = 1; n <= 12; n++) urls.Add("wss://socket" + n.ToString(CultureInfo.InvariantCulture) + ".donationalerts.com");
+      for (n = 1; n <= 12; n++) AddAlertHost(urls, "wss://socket" + n.ToString(CultureInfo.InvariantCulture) + ".donationalerts.com:443");
       Exception last = null;
       int i;
       for (i = 0; i < urls.Count; i++)
@@ -1807,7 +1810,7 @@ namespace Rech
         string url = urls[i] + "/socket.io/?EIO=3&transport=websocket";
         try
         {
-          await AlertsOnce(source, token, url, ct, gen);
+          await AlertsOnce(source, token, group, url, ct, gen);
           return;
         }
         catch (Exception ex)
@@ -1821,13 +1824,22 @@ namespace Rech
       throw new HaltException(last == null ? "DonationAlerts не открылся." : "DonationAlerts не ответил. Вставь полную ссылку виджета.", 20000);
     }
 
-    static async Task<string> AlertSocket(string token, CancellationToken ct)
+    static void AddAlertHost(List<string> urls, string host)
     {
-      string pageUrl = "https://www.donationalerts.com/widget/alerts?group_id=1&token=" + Uri.EscapeDataString(token);
+      if (host == null) return;
+      host = host.Trim().TrimEnd('/');
+      if (host.Length == 0) return;
+      if (urls.Contains(host)) return;
+      urls.Add(host);
+    }
+
+    static async Task<string> AlertSocket(string token, string group, CancellationToken ct)
+    {
+      string pageUrl = "https://www.donationalerts.com/widget/alerts?group_id=" + group + "&token=" + Uri.EscapeDataString(token);
       try
       {
         string page = await Net.GetText(pageUrl, ct);
-        string host = Net.Match(page, "(wss://socket\\d*\\.donationalerts\\.com)");
+        string host = Net.Match(page, "(wss://socket\\d*\\.donationalerts\\.com(?::\\d+)?)");
         if (host != null && host.Length > 0) return host;
       }
       catch (Exception ex)
@@ -1838,10 +1850,10 @@ namespace Rech
           throw new HaltException("Этот токен DonationAlerts не узнаёт. Скопируй ссылку виджета целиком из адресной строки браузера.", 60000);
         }
       }
-      return "wss://socket11.donationalerts.com";
+      return "wss://socket4.donationalerts.com:443";
     }
 
-    async Task AlertsOnce(SourceConfig source, string token, string url, CancellationToken ct, int gen)
+    async Task AlertsOnce(SourceConfig source, string token, string group, string url, CancellationToken ct, int gen)
     {
       using (WsClient ws = new WsClient())
       {
@@ -1855,63 +1867,183 @@ namespace Rech
         await connecting;
         string open = await ws.Receive(ct);
         if (open == null || open.Length == 0 || open[0] != '0') throw new Exception("протокол");
-        await ws.Send("2probe", ct);
-        string probe = await ws.Receive(ct);
-        if (probe != null && probe.IndexOf("3probe", StringComparison.Ordinal) >= 0)
-        {
-          await ws.Send("5", ct);
-        }
         await ws.Send("40", ct);
         Dictionary<string, object> payload = new Dictionary<string, object>();
         payload["token"] = token;
-        payload["type"] = "minor";
         object[] call = new object[] { "add-user", payload };
         await ws.Send("42" + Net.Serialize(call), ct);
         EmitStatus(gen, source.Id, "live", "Слушаю донаты");
-        while (!ct.IsCancellationRequested)
+        CancellationTokenSource pollGate = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task poll = PollAlerts(source, token, group, pollGate.Token, gen);
+        try
         {
-          string raw = await ws.Receive(ct);
-          if (raw == null) continue;
-          if (raw == "2")
+          while (!ct.IsCancellationRequested)
           {
-            await ws.Send("3", ct);
-            continue;
-          }
-          if (!raw.StartsWith("42")) continue;
-          JArray arr;
-          try { arr = JArray.Parse(raw.Substring(2)); }
-          catch { continue; }
-          if (arr.Count < 2) continue;
-          string eventName = arr[0].ToString();
-          if (!string.Equals(eventName, "donation", StringComparison.OrdinalIgnoreCase)) continue;
-          JToken data = arr[1];
-          if (data.Type == JTokenType.String)
-          {
-            try { data = JToken.Parse(data.ToString()); }
+            string raw = await ws.Receive(ct);
+            if (raw == null) continue;
+            if (raw == "2")
+            {
+              await ws.Send("3", ct);
+              continue;
+            }
+            if (raw == "1") throw new Exception("DonationAlerts закрыл донаты");
+            if (!raw.StartsWith("42")) continue;
+            JArray arr;
+            try { arr = JArray.Parse(raw.Substring(2)); }
             catch { continue; }
+            if (arr.Count < 2) continue;
+            string eventName = arr[0].ToString();
+            if (!string.Equals(eventName, "donation", StringComparison.OrdinalIgnoreCase)) continue;
+            AcceptAlert(gen, source, arr[1]);
           }
-          string author = FirstText(data, "username", "name");
-          if (author.Length == 0) author = "Донат";
-          string amount = FirstText(data, "amount_formatted", "amount", "amount_main");
-          string currency = FirstText(data, "currency");
-          string text = FirstText(data, "message", "comment");
-          string spoken = amount;
-          if (currency.Length > 0 && spoken.IndexOf(currency, StringComparison.OrdinalIgnoreCase) < 0) spoken = (spoken + " " + currency).Trim();
-          if (text.Length > 0) spoken = (spoken + ". " + text).Trim();
-          if (spoken.Length == 0) spoken = "новый донат";
-          string rawId = FirstText(data, "id", "_id");
-          if (rawId.Length == 0) rawId = author + ":" + amount + ":" + text;
-          ChatMessage chat = new ChatMessage();
-          chat.Id = "da:" + source.Id + ":" + rawId;
-          chat.SourceId = source.Id;
-          chat.Platform = "da";
-          chat.Author = author;
-          chat.Text = spoken;
-          chat.Ts = Net.Now();
-          chat.Fresh = true;
-          EmitMessage(gen, chat);
+        }
+        finally
+        {
+          try { pollGate.Cancel(); } catch { }
+          try { poll.Wait(500); } catch { }
+          pollGate.Dispose();
         }
       }
+    }
+
+    async Task PollAlerts(SourceConfig source, string token, string group, CancellationToken ct, int gen)
+    {
+      string url = "https://www.donationalerts.com/api/getwidgetdata/alerts?token=" + Uri.EscapeDataString(token) + "&group_id=" + Uri.EscapeDataString(group);
+      while (!ct.IsCancellationRequested)
+      {
+        try
+        {
+          await Task.Delay(2500, ct);
+          string raw = await Net.GetText(url, ct);
+          JToken body = ParseAlertBody(raw);
+          JArray alerts = body == null ? null : body["alerts"] as JArray;
+          if (alerts == null && body != null) alerts = body.SelectToken("alerts") as JArray;
+          if (alerts == null) continue;
+          int i;
+          for (i = 0; i < alerts.Count; i++) AcceptAlert(gen, source, alerts[i]);
+        }
+        catch
+        {
+          if (ct.IsCancellationRequested) return;
+        }
+      }
+    }
+
+    static JToken ParseAlertBody(string raw)
+    {
+      if (raw == null) return null;
+      int from = raw.IndexOf('{');
+      int to = raw.LastIndexOf('}');
+      if (from < 0 || to <= from) return null;
+      try { return JToken.Parse(raw.Substring(from, to - from + 1)); }
+      catch { return null; }
+    }
+
+    static JToken UnwrapAlert(JToken data)
+    {
+      int guard = 0;
+      while (data != null && data.Type == JTokenType.String && guard < 3)
+      {
+        string text = data.ToString();
+        if (text.Length == 0) return null;
+        try { data = JToken.Parse(text); }
+        catch { return null; }
+        guard = guard + 1;
+      }
+      return data;
+    }
+
+    static bool MoneyAlert(JToken data)
+    {
+      if (data == null || data.Type != JTokenType.Object) return false;
+      string kind = FirstText(data, "alert_type");
+      if (kind.Length == 0) return FirstText(data, "amount", "amount_main", "amount_formatted", "amount_in_user_currency").Length > 0;
+      int dot = kind.IndexOf('.');
+      if (dot > 0) kind = kind.Substring(0, dot);
+      int code;
+      if (!int.TryParse(kind, NumberStyles.Integer, CultureInfo.InvariantCulture, out code)) return false;
+      return code == 1 || code == 32;
+    }
+
+    void AcceptAlert(int gen, SourceConfig source, JToken data)
+    {
+      data = UnwrapAlert(data);
+      if (!MoneyAlert(data)) return;
+      string author = FirstText(data, "username", "name");
+      if (author.Length == 0) author = "Донат";
+      string amount = TrimMoney(FirstText(data, "amount_formatted", "amount_main", "amount", "amount_in_user_currency"));
+      string currency = MoneyWord(amount, FirstText(data, "currency"));
+      string text = FirstText(data, "message", "comment");
+      string spoken = amount;
+      if (currency.Length > 0) spoken = (spoken + " " + currency).Trim();
+      if (text.Length > 0) spoken = (spoken + ". " + text).Trim();
+      if (spoken.Length == 0) spoken = "новый донат";
+      string rawId = FirstText(data, "id", "_id");
+      if (rawId.Length == 0 || rawId == "0") rawId = "0:" + author + ":" + amount + ":" + text;
+      string id = "da:" + source.Id + ":" + rawId;
+      lock (gate)
+      {
+        if (alertSeen.Count > 4000) alertSeen.Clear();
+        if (alertSeen.Contains(id)) return;
+        alertSeen.Add(id);
+      }
+      ChatMessage chat = new ChatMessage();
+      chat.Id = id;
+      chat.SourceId = source.Id;
+      chat.Platform = "da";
+      chat.Author = author;
+      chat.Text = spoken;
+      chat.Ts = Net.Now();
+      chat.Fresh = true;
+      EmitMessage(gen, chat);
+    }
+
+    static string TrimMoney(string amount)
+    {
+      if (amount == null) return "";
+      amount = amount.Trim().Replace(" ", "");
+      if (amount.Length == 0) return "";
+      decimal value;
+      if (!decimal.TryParse(amount.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out value)) return amount;
+      if (value == decimal.Truncate(value)) return decimal.Truncate(value).ToString(CultureInfo.InvariantCulture);
+      return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    static string MoneyWord(string amount, string currency)
+    {
+      string code = currency == null ? "" : currency.Trim().ToUpperInvariant();
+      if (code.Length == 0) return "";
+      if (code == "RUB" || code == "RUR" || code == "РУБ" || code == "₽") return PluralMoney(amount, "рубль", "рубля", "рублей");
+      if (code == "USD" || code == "$") return PluralMoney(amount, "доллар", "доллара", "долларов");
+      if (code == "EUR" || code == "€") return "евро";
+      if (code == "KZT" || code == "₸") return "тенге";
+      if (code == "UAH" || code == "₴") return PluralMoney(amount, "гривна", "гривны", "гривен");
+      if (code == "BYN") return PluralMoney(amount, "белорусский рубль", "белорусских рубля", "белорусских рублей");
+      if (Regex.IsMatch(code, "[А-ЯЁ]")) return currency.Trim();
+      return "";
+    }
+
+    static string PluralMoney(string amount, string one, string few, string many)
+    {
+      string digits = amount == null ? "" : amount;
+      int cut = digits.IndexOfAny(new char[] { '.', ',' });
+      if (cut >= 0) digits = digits.Substring(0, cut);
+      int value;
+      if (!int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out value)) return many;
+      int mod100 = Math.Abs(value) % 100;
+      int mod10 = Math.Abs(value) % 10;
+      if (mod100 >= 11 && mod100 <= 14) return many;
+      if (mod10 == 1) return one;
+      if (mod10 >= 2 && mod10 <= 4) return few;
+      return many;
+    }
+
+    static string AlertGroup(string input)
+    {
+      if (input == null) return "1";
+      string group = Net.Match(input, "[?&]group_id=(\\d+)");
+      if (group == null || group.Length == 0) return "1";
+      return group;
     }
 
     static string AlertToken(string input)

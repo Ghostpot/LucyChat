@@ -14,7 +14,7 @@
     <Company>Ghostpot</Company>
     <Copyright>Ghostpot — https://ghostpot.ru</Copyright>
     <Description>Люси читает чат эфира</Description>
-    <Version>1.7.54</Version>
+    <Version>1.7.55</Version>
     <ApplicationIcon>lucy.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -27,6 +27,9 @@
   <ItemGroup>
     <EmbeddedResource Include="lucy.png">
       <LogicalName>Rech.lucy.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="thanks.txt">
+      <LogicalName>Rech.thanks.txt</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

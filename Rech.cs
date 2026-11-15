@@ -19,6 +19,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Speech.Synthesis;
@@ -3231,7 +3232,23 @@ namespace Rech
       return text;
     }
 
+    public static string Thank(string who, string gift, string note, string samples)
+    {
+      string name = who == null || who.Trim().Length == 0 ? "друг" : who.Trim();
+      string money = gift == null ? "" : gift.Trim();
+      string extra = note == null ? "" : note.Trim();
+      if (extra.Length > 80) extra = extra.Substring(0, 80);
+      string line = name + " задонатил: " + money;
+      if (extra.Length > 0) line = line + ". Сообщение: " + extra;
+      return Reply(line, samples == null ? "" : samples, "", 1);
+    }
+
     public static string Reply(string heard, string facts, string room)
+    {
+      return Reply(heard, facts, room, 0);
+    }
+
+    public static string Reply(string heard, string facts, string room, int thanks)
     {
       LastNote = "";
       if (!Ready) return "";
@@ -3240,20 +3257,46 @@ namespace Rech
       string userPath = Path.Combine(home, "user.txt");
       string line = heard == null ? "" : heard.Replace("\r", " ").Replace("\n", " ").Trim();
       if (line.Length > 180) line = line.Substring(0, 180);
-      string card = Slice(facts, line);
-      string known = LucyLore.Pack(line, card, LucyStage.World);
-      bool lore = LucyLore.LastHit;
+      string card = "";
+      string known = "";
+      bool lore = false;
       string here = LucyStage.World == null || LucyStage.World.Length == 0 ? "Азерот" : LucyStage.World;
-      string rule = lore
-        ? "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна или две фразы. Сейчас эфир в мире " + here + ". Если вопрос про него, отвечай про него. Если прямо спросили про другой мир, ответь про тот. Не пиши своё имя и двоеточие в начале. Никогда не говори «хотя бы для славы в истории». Не повторяй уже сказанное.\n"
-        : "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Сейчас эфир в мире " + here + ". Отвечай про него, а про другой мир только если спросили. Не пиши своё имя в начале. Никогда не говори «хотя бы для славы в истории». Не повторяй уже сказанное.\n";
-      string talk = room == null ? "" : room.Trim();
+      if (thanks != 0)
+      {
+        known = facts == null ? "" : facts.Trim();
+        if (known.Length > 900) known = known.Substring(0, 900);
+      }
+      else
+      {
+        card = Slice(facts, line);
+        known = LucyLore.Pack(line, card, LucyStage.World);
+        lore = LucyLore.LastHit;
+      }
+      string rule;
+      if (thanks != 0)
+      {
+        rule = "Ты Люси, тебе двадцать пять. Тебе только что задонатили на стриме. Ответь вслух одной или двумя короткими фразами, по-русски, от первого лица. Ты довольная, резкая и смешная: деньги для тебя еда, кровать, эль и таверна вместо подворотни. Поблагодари по имени. Не будь слащавой. Не пиши своё имя и двоеточие. Не повторяй примеры дословно.\nПримеры, только дух:\n" + known + "\n";
+        known = "";
+      }
+      else if (lore)
+      {
+        rule = "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна или две фразы. Сейчас эфир в мире " + here + ". Если вопрос про него, отвечай про него. Если прямо спросили про другой мир, ответь про тот. Не пиши своё имя и двоеточие в начале. Никогда не говори «хотя бы для славы в истории». Не повторяй уже сказанное.\n";
+      }
+      else
+      {
+        rule = "Ты Люси, тебе двадцать пять. Говори от первого лица, живо и коротко, по-русски, одна фраза. Сейчас эфир в мире " + here + ". Отвечай про него, а про другой мир только если спросили. Не пиши своё имя в начале. Никогда не говори «хотя бы для славы в истории». Не повторяй уже сказанное.\n";
+      }
+      string talk = thanks != 0 || room == null ? "" : room.Trim();
       if (talk.Length > 700) talk = talk.Substring(talk.Length - 700);
       if (talk.Length > 0) talk = "Живой чат:\n" + talk + "\n";
       File.WriteAllText(systemPath, rule + talk + known, new UTF8Encoding(false));
       File.WriteAllText(userPath, line, new UTF8Encoding(false));
       bool wantGpu = GpuReady && !gpuFailed;
       string answer = "";
+      int predict = thanks != 0 ? 72 : (lore ? 96 : 40);
+      string temp = thanks != 0 ? "0.92" : (lore ? "0.55" : "0.7");
+      int ctx = lore ? 2048 : 1024;
+      int budget = thanks != 0 ? 22000 : 90000;
       int pass;
       for (pass = 0; pass < 2; pass++)
       {
@@ -3272,7 +3315,7 @@ namespace Rech
         int threads = gpu ? 2 : Environment.ProcessorCount / 2;
         if (threads < 2) threads = 2;
         if (threads > 4) threads = 4;
-        info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers " + (gpu ? GpuLayers.ToString(CultureInfo.InvariantCulture) : "0") + " --threads " + threads.ToString(CultureInfo.InvariantCulture) + " --ctx-size " + (lore ? "2048" : "1024") + " --n-predict " + (lore ? "96" : "40") + " --temp " + (lore ? "0.55" : "0.7") + " --repeat-penalty 1.15";
+        info.Arguments = "--model \"" + ModelFile() + "\" --file \"" + userPath + "\" --system-prompt-file \"" + systemPath + "\" --single-turn --no-display-prompt --log-verbosity 1 --no-warmup --gpu-layers " + (gpu ? GpuLayers.ToString(CultureInfo.InvariantCulture) : "0") + " --threads " + threads.ToString(CultureInfo.InvariantCulture) + " --ctx-size " + ctx.ToString(CultureInfo.InvariantCulture) + " --n-predict " + predict.ToString(CultureInfo.InvariantCulture) + " --temp " + temp + " --repeat-penalty 1.18";
         Process proc = new Process();
         proc.StartInfo = info;
         StringBuilder stdout = new StringBuilder();
@@ -3314,9 +3357,10 @@ namespace Rech
         };
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
-        if (!proc.WaitForExit(90000))
+        if (!proc.WaitForExit(budget))
         {
           try { proc.Kill(true); } catch { try { proc.Kill(); } catch { } }
+          if (thanks != 0) return "";
           if (gpu)
           {
             gpuFailed = true;
@@ -3327,9 +3371,19 @@ namespace Rech
           return "";
         }
         try { proc.WaitForExit(2000); } catch { }
-        answer = lore ? Keep(Clean(stdout.ToString()), 2) : OneSentence(Clean(stdout.ToString()));
-        if (answer.Length == 0) answer = lore ? Keep(Clean(stderr.ToString()), 2) : OneSentence(Clean(stderr.ToString()));
-        answer = Guard(answer, card, lore);
+        if (thanks != 0)
+        {
+          answer = Polish(Keep(Clean(stdout.ToString()), 2));
+          if (answer.Length == 0) answer = Polish(Keep(Clean(stderr.ToString()), 2));
+          string lowThanks = answer.ToLowerInvariant();
+          if (answer.Length < 8 || lowThanks.Contains("пример") || lowThanks.Contains("первого лица") || lowThanks.Contains("не повторяй")) answer = "";
+        }
+        else
+        {
+          answer = lore ? Keep(Clean(stdout.ToString()), 2) : OneSentence(Clean(stdout.ToString()));
+          if (answer.Length == 0) answer = lore ? Keep(Clean(stderr.ToString()), 2) : OneSentence(Clean(stderr.ToString()));
+          answer = Guard(answer, card, lore);
+        }
         if (answer.Length == 0 && gpu)
         {
           string err = stderr.ToString().ToLowerInvariant();
@@ -3342,10 +3396,11 @@ namespace Rech
         }
         if (answer.Length == 0)
         {
-          string note = (stderr.ToString() + " " + stdout.ToString()).Trim();
-          note = Regex.Replace(note, "\\s+", " ").Trim();
-          if (note.Length > 110) note = note.Substring(0, 110);
-          LastNote = note.Length == 0 ? "Пустой ответ. Позови ещё раз." : note;
+          if (thanks != 0) return "";
+          string noteLeft = (stderr.ToString() + " " + stdout.ToString()).Trim();
+          noteLeft = Regex.Replace(noteLeft, "\\s+", " ").Trim();
+          if (noteLeft.Length > 110) noteLeft = noteLeft.Substring(0, 110);
+          LastNote = noteLeft.Length == 0 ? "Пустой ответ. Позови ещё раз." : noteLeft;
           return "";
         }
         return answer;
@@ -3403,6 +3458,108 @@ namespace Rech
     public List<string> Talk = new List<string>();
   }
 
+  public static class LucyThanks
+  {
+    static readonly object gate = new object();
+    static string[] lines;
+    static int[] recent = new int[48];
+    static int recentCount;
+    static Random rng = new Random();
+
+    public static string Line(string name, string gift)
+    {
+      Ensure();
+      string who = name == null || name.Trim().Length == 0 ? "друг" : name.Trim();
+      if (who.Length > 24) who = who.Substring(0, 24);
+      string money = gift == null || gift.Trim().Length == 0 ? "этот донат" : gift.Trim();
+      if (money.Length > 40) money = money.Substring(0, 40).Trim();
+      int pick;
+      lock (gate)
+      {
+        pick = rng.Next(lines.Length);
+        int tries = 0;
+        while (tries < 16 && Seen(pick))
+        {
+          pick = rng.Next(lines.Length);
+          tries = tries + 1;
+        }
+        recent[recentCount % recent.Length] = pick;
+        recentCount = recentCount + 1;
+      }
+      return Fill(lines[pick], who, money);
+    }
+
+    public static string Samples(int count)
+    {
+      Ensure();
+      if (count < 1) count = 1;
+      if (count > 8) count = 8;
+      StringBuilder sb = new StringBuilder();
+      lock (gate)
+      {
+        int i;
+        for (i = 0; i < count; i++)
+        {
+          string line = lines[rng.Next(lines.Length)];
+          if (i > 0) sb.Append('\n');
+          sb.Append(Fill(line, "друг", "донат"));
+        }
+      }
+      return sb.ToString();
+    }
+
+    static string Fill(string line, string who, string money)
+    {
+      if (line == null) return "";
+      return line.Replace("{имя}", who).Replace("{дар}", money);
+    }
+
+    static bool Seen(int pick)
+    {
+      int n = recentCount < recent.Length ? recentCount : recent.Length;
+      int i;
+      for (i = 0; i < n; i++)
+      {
+        if (recent[i] == pick) return true;
+      }
+      return false;
+    }
+
+    static void Ensure()
+    {
+      if (lines != null && lines.Length > 0) return;
+      lock (gate)
+      {
+        if (lines != null && lines.Length > 0) return;
+        List<string> found = new List<string>();
+        try
+        {
+          Stream stream = typeof(LucyThanks).Assembly.GetManifestResourceStream("Rech.thanks.txt");
+          if (stream != null)
+          {
+            using (stream)
+            using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+            {
+              string raw = reader.ReadToEnd();
+              string[] rows = raw.Replace("\r", "").Split('\n');
+              int i;
+              for (i = 0; i < rows.Length; i++)
+              {
+                string row = rows[i].Trim();
+                if (row.Length > 0) found.Add(row);
+              }
+            }
+          }
+        }
+        catch
+        {
+        }
+        if (found.Count == 0) found.Add("{имя}, спасибо. За {дар} я сегодня в таверне, а не в подворотне.");
+        lines = found.ToArray();
+      }
+    }
+  }
+
   public static class LucyStage
   {
     public static bool On;
@@ -3434,6 +3591,11 @@ namespace Rech
 
     public static void Show(string answer)
     {
+      Show(answer, "");
+    }
+
+    public static void Show(string answer, string mood)
+    {
       if (Singing && Rewards.CurrentEmbed().Length > 0) return;
       singing = false;
       Miss = "";
@@ -3445,7 +3607,9 @@ namespace Rech
       }
       string low = answer.ToLowerInvariant();
       string path = Talk;
-      if (low.Contains("дура") || low.Contains("затк") || low.Contains("беси") || low.Contains("злю") || low.Contains("хватит") || low.Contains("нагл")) path = Mad;
+      if (mood == "joke") path = Joke;
+      else if (mood == "mad") path = Mad;
+      else if (low.Contains("дура") || low.Contains("затк") || low.Contains("беси") || low.Contains("злю") || low.Contains("хватит") || low.Contains("нагл")) path = Mad;
       else if (low.Contains("аха") || low.Contains("хах") || low.Contains("хех") || low.Contains("смеш") || low.Contains("шут")) path = Joke;
       path = FirstClip(path, Talk, Joke, Mad, Also, "azeroth/talk.mp4", "zomboid/talk.mp4", "rangers/talk.mp4");
       if (path.Length == 0)
@@ -6048,7 +6212,7 @@ namespace Rech
       sileroInstall.Click += delegate { StartSileroInstall(); };
       Put(0, sileroInstall, 36);
       Put(1, MakeCaption("ЛЮСИ"), 28);
-      Put(1, MakeWrap("Отвечает, если её позвали. Здесь лицо, мир и вход её аккаунта. Награды и голос чата — в других разделах."), 58);
+      Put(1, MakeWrap("Отвечает, если её позвали. За донат сама вылезает довольная и благодарит. Здесь лицо, мир и её вход."), 72);
       lucyBox = MakeCheck("Люси отвечает");
       Put(1, lucyBox, 28);
       modBox = MakeCheck("Люси модерирует: мут за запретные слова, бан за спам");
@@ -7673,6 +7837,7 @@ namespace Rech
       else if (!namedReward && message.Fresh && picturePay) Rewards.Paint(message.Author, "", Rewards.IsVkPicture(message.Text));
       if (message.Fresh && !quiet) SpeakLater(message);
       if (message.Fresh && !quiet && !mercy) ConsiderLucy(message);
+      if (message.Fresh && !quiet && (message.Platform == "da" || message.Platform == "boosty")) ThankDonor(message);
     }
 
     void Forgive(ChatMessage message)
@@ -8181,6 +8346,85 @@ namespace Rech
       else set.Talk = dlg.FileName;
       ApplyLucyStage();
       SaveSettings();
+    }
+
+    void ThankDonor(ChatMessage message)
+    {
+      if (message == null || LucyStage.Singing || voicePaused) return;
+      string author = message.Author == null ? "" : message.Author.Trim();
+      if (author.Length == 0) author = "друг";
+      string gift = message.Text == null ? "" : message.Text.Trim();
+      string note = "";
+      int dot = gift.IndexOf('.');
+      if (dot > 0 && dot < 42)
+      {
+        note = gift.Substring(dot + 1).Trim();
+        gift = gift.Substring(0, dot).Trim();
+      }
+      string canned = LucyThanks.Line(author, gift);
+      ApplyLucyStage();
+      if (!LucyStage.Singing) LucyStage.Show(canned, "joke");
+      if (!LucyLocal.Ready || lucyBusy)
+      {
+        SayLucy(canned);
+        return;
+      }
+      lucyBusy = true;
+      if (lucyState != null) lucyState.Text = "Люси радуется донату…";
+      string who = author;
+      string money = gift;
+      string extra = note;
+      Thread thread = new Thread(new ThreadStart(delegate
+      {
+        string say = "";
+        try
+        {
+          say = LucyLocal.Thank(who, money, extra, LucyThanks.Samples(6));
+        }
+        catch (Exception ex)
+        {
+          say = "";
+          LucyLocal.LastNote = ex.Message;
+        }
+        if (say == null || say.Trim().Length < 8) say = canned;
+        else say = say.Trim();
+        try
+        {
+          BeginInvoke(new Action(delegate
+          {
+            lucyBusy = false;
+            ApplyLucyStage();
+            if (!LucyStage.Singing) LucyStage.Show(say, "joke");
+            SayLucy(say);
+            if (lucyState != null) lucyState.Text = "Люси поблагодарила за донат.";
+          }));
+        }
+        catch
+        {
+          lucyBusy = false;
+        }
+      }));
+      thread.IsBackground = true;
+      thread.Name = "RechThanks";
+      thread.Start();
+    }
+
+    void SayLucy(string say)
+    {
+      if (say == null) return;
+      say = say.Trim();
+      if (say.Length == 0 || voicePaused) return;
+      ChatMessage reply = new ChatMessage();
+      reply.Id = "lucy:thanks:" + Guid.NewGuid().ToString("N");
+      reply.Platform = "lucy";
+      reply.Author = "Люси";
+      reply.Text = say;
+      reply.Ts = Net.Now();
+      reply.Fresh = false;
+      AddMessage(reply);
+      string line = Spoken("Люси", say);
+      if (line.Length == 0) return;
+      speaker.Say(line, false, "xenia", englishLine, null, true);
     }
 
     void ConsiderLucy(ChatMessage message)
